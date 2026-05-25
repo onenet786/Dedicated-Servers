@@ -124,8 +124,12 @@ class ServerStore extends ChangeNotifier {
 
   Future<void> _deletePreloadedServers() async {
     for (final id in _preloadedServerIds) {
-      await _deleteRemote(id);
-      await _database.deleteServer(id);
+      try {
+        await _deleteRemote(id);
+        await _database.deleteServer(id);
+      } catch (_) {
+        await _database.deleteServer(id);
+      }
     }
   }
 

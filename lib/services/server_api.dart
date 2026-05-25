@@ -20,7 +20,7 @@ class ServerApi {
 
   bool get isConfigured => _baseUrl.isNotEmpty;
 
-  Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+  Uri _uri(String requestPath) => Uri.parse('$_baseUrl$requestPath');
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -29,26 +29,32 @@ class ServerApi {
       };
 
   Future<List<ManagedServer>> fetchServers() async {
-    final response = await _client.get(_uri('/servers.php'), headers: _headers);
+    final response = await _client
+        .get(_uri('/servers.php'), headers: _headers)
+        .timeout(const Duration(seconds: 12));
     final body = _decode(response);
     final rows = body['data'] as List<dynamic>;
     return rows.cast<Map<String, Object?>>().map(ManagedServer.fromMap).toList();
   }
 
   Future<void> saveServer(ManagedServer server) async {
-    final response = await _client.post(
-      _uri('/servers.php'),
-      headers: _headers,
-      body: jsonEncode(server.toMap()),
-    );
+    final response = await _client
+        .post(
+          _uri('/servers.php'),
+          headers: _headers,
+          body: jsonEncode(server.toMap()),
+        )
+        .timeout(const Duration(seconds: 12));
     _decode(response);
   }
 
   Future<void> deleteServer(String id) async {
-    final response = await _client.delete(
-      _uri('/servers.php?id=${Uri.encodeComponent(id)}'),
-      headers: _headers,
-    );
+    final response = await _client
+        .delete(
+          _uri('/servers.php?id=${Uri.encodeComponent(id)}'),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 12));
     _decode(response);
   }
 

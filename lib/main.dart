@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'screens/home_screen.dart';
-import 'services/renewal_notification_service.dart';
 import 'services/server_store.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RenewalNotificationService.instance.initialize();
   final store = ServerStore();
-  await store.load();
   runApp(ServerManagerApp(store: store));
 }
 
@@ -24,7 +21,29 @@ class ServerManagerApp extends StatelessWidget {
       title: 'Server Manager',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
-      home: HomeScreen(store: store),
+      home: _AppLoader(store: store),
     );
+  }
+}
+
+class _AppLoader extends StatefulWidget {
+  const _AppLoader({required this.store});
+
+  final ServerStore store;
+
+  @override
+  State<_AppLoader> createState() => _AppLoaderState();
+}
+
+class _AppLoaderState extends State<_AppLoader> {
+  @override
+  void initState() {
+    super.initState();
+    widget.store.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return HomeScreen(store: widget.store);
   }
 }
