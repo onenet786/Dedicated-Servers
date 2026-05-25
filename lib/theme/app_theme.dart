@@ -5,8 +5,11 @@ class AppColors {
   static const Color primarySoft = Color(0xFF1F2937);
   static const Color accent = Color(0xFF0F766E);
   static const Color accentDark = Color(0xFF115E59);
-  static const Color background = Color(0xFFF7F9FB);
+  static const Color background = Color(0xFFEFF6FF);
   static const Color surface = Colors.white;
+  static const Color surfaceWarm = Color(0xFFFFFBEB);
+  static const Color violet = Color(0xFF7C3AED);
+  static const Color violetSoft = Color(0xFFF5F3FF);
   static const Color border = Color(0xFFE5E7EB);
   static const Color borderStrong = Color(0xFFD1D5DB);
   static const Color textPrimary = Color(0xFF111827);
@@ -39,14 +42,14 @@ class AppTheme {
       ),
       scaffoldBackgroundColor: AppColors.background,
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.primary,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        iconTheme: IconThemeData(color: AppColors.textPrimary),
+        iconTheme: IconThemeData(color: Colors.white),
         titleTextStyle: TextStyle(
-          color: AppColors.textPrimary,
+          color: Colors.white,
           fontSize: 18,
           fontWeight: FontWeight.w700,
           letterSpacing: 0,
@@ -87,13 +90,14 @@ class AppTheme {
             ),
           ),
       cardTheme: CardThemeData(
-        elevation: 0,
+        elevation: 3,
         margin: EdgeInsets.zero,
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
+        shadowColor: const Color(0x332563EB),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFFE0E7FF)),
         ),
       ),
       dividerTheme: const DividerThemeData(
@@ -113,7 +117,7 @@ class AppTheme {
         prefixIconColor: AppColors.textMuted,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderSide: const BorderSide(color: Color(0xFFD8B4FE)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),

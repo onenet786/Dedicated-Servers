@@ -63,6 +63,32 @@ class RenewalNotificationService {
     await _notifications.cancel(id: _notificationId(serverId));
   }
 
+  Future<void> showTestNotification() async {
+    if (kIsWeb) {
+      return;
+    }
+
+    await initialize();
+    await _notifications.show(
+      id: 42,
+      title: 'Server Manager test',
+      body: 'Notifications are working on this device.',
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'server_renewals',
+          'Server renewal reminders',
+          channelDescription:
+              'Daily reminders for servers due soon or overdue.',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+        macOS: DarwinNotificationDetails(),
+        linux: LinuxNotificationDetails(),
+      ),
+    );
+  }
+
   Future<void> _scheduleDailyReminder(
     ManagedServer server,
     int notificationId,

@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/server.dart';
+import '../services/renewal_notification_service.dart';
 import '../services/server_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/server_status_chip.dart';
 import 'server_detail_screen.dart';
 import 'server_form_screen.dart';
+import 'reports_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.store});
@@ -44,61 +46,86 @@ class _HomeScreenState extends State<HomeScreen> {
           'Servers',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Reports',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ReportsScreen(store: widget.store),
+              ),
+            ),
+            icon: const Icon(Icons.analytics_outlined),
+          ),
+          IconButton(
+            tooltip: 'Test notification',
+            onPressed: () => _testNotification(context),
+            icon: const Icon(Icons.notifications_active_outlined),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openForm(context),
         icon: const Icon(Icons.add),
         label: const Text('Add Server'),
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
-          children: [
-            _HeroCard(store: widget.store),
-            const SizedBox(height: 18),
-            TextField(
-              decoration: const InputDecoration(
-                hintText: 'Search IP, client, provider, specs...',
-                prefixIcon: Icon(Icons.search),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFE0F2FE), Color(0xFFF5F3FF), Color(0xFFFFFBEB)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 100),
+            children: [
+              _HeroCard(store: widget.store),
+              const SizedBox(height: 18),
+              TextField(
+                decoration: const InputDecoration(
+                  hintText: 'Search IP, client, provider, specs...',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: (value) => setState(() => _query = value),
               ),
-              onChanged: (value) => setState(() => _query = value),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Servers (${servers.length})',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                Text(
-                  'Renewals tracked',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey.shade600,
-                      ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (servers.isEmpty)
-              const _EmptyState()
-            else
-              ...servers.map(
-                (server) => _ServerCard(
-                  server: server,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ServerDetailScreen(
-                        store: widget.store,
-                        serverId: server.id,
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Servers (${servers.length})',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  Text(
+                    'Renewals tracked',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (servers.isEmpty)
+                const _EmptyState()
+              else
+                ...servers.map(
+                  (server) => _ServerCard(
+                    server: server,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ServerDetailScreen(
+                          store: widget.store,
+                          serverId: server.id,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -111,6 +138,16 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Future<void> _testNotification(BuildContext context) async {
+    await RenewalNotificationService.instance.showTestNotification();
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Test notification sent')),
+    );
+  }
 }
 
 class _HeroCard extends StatelessWidget {
@@ -121,24 +158,38 @@ class _HeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(8),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF111827), Color(0xFF0F766E), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.info.withValues(alpha: 0.24),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Infrastructure Overview',
-            style: Theme.of(context).textTheme.labelSmall,
+            style: TextStyle(
+              color: Color(0xFFBFDBFE),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
-            '${store.servers.length} managed servers',
+            '${store.rootServers.length} dedicated servers',
             style: const TextStyle(
-              color: AppColors.textPrimary,
+              color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w800,
             ),
@@ -147,8 +198,10 @@ class _HeroCard extends StatelessWidget {
           Row(
             children: [
               Expanded(child: _Metric(icon: Icons.event_busy_outlined, label: 'Due soon', value: '${store.urgentRenewals}', color: AppColors.warning)),
-              Expanded(child: _Metric(icon: Icons.business_center_outlined, label: 'Clients', value: '${store.clientCount}', color: AppColors.accent)),
-              Expanded(child: _Metric(icon: Icons.payments_outlined, label: 'Monthly', value: '\$${store.monthlySpend.toStringAsFixed(0)}', color: AppColors.info)),
+              const SizedBox(width: 8),
+              Expanded(child: _Metric(icon: Icons.developer_board_outlined, label: 'VMs', value: '${store.vmCount}', color: const Color(0xFF22C55E))),
+              const SizedBox(width: 8),
+              Expanded(child: _Metric(icon: Icons.payments_outlined, label: 'Monthly', value: '\$${store.monthlySpend.toStringAsFixed(0)}', color: const Color(0xFF38BDF8))),
             ],
           ),
         ],
@@ -167,29 +220,23 @@ class _Metric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: color, size: 18),
-        ),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
-              Text(label, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-            ],
-          ),
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 8),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(label, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFDDEAFE), fontSize: 12)),
+        ],
+      ),
     );
   }
 }
@@ -204,12 +251,18 @@ class _ServerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM d, yyyy');
 
+    final accent = _accentForStatus(server.status);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
-        child: Padding(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: accent, width: 5)),
+          ),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,10 +273,17 @@ class _ServerCard extends StatelessWidget {
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      gradient: LinearGradient(
+                        colors: [
+                          accent.withValues(alpha: 0.2),
+                          accent.withValues(alpha: 0.08),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.dns_rounded, color: AppColors.accent),
+                    child: Icon(Icons.dns_rounded, color: accent),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -253,6 +313,21 @@ class _ServerCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+Color _accentForStatus(ServerStatus status) {
+  switch (status) {
+    case ServerStatus.active:
+      return AppColors.success;
+    case ServerStatus.dueSoon:
+      return AppColors.warning;
+    case ServerStatus.overdue:
+      return AppColors.danger;
+    case ServerStatus.suspended:
+      return AppColors.violet;
+    case ServerStatus.retired:
+      return AppColors.neutral;
   }
 }
 

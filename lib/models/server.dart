@@ -3,6 +3,7 @@ enum ServerStatus { active, dueSoon, overdue, suspended, retired }
 class ManagedServer {
   const ManagedServer({
     required this.id,
+    this.parentId,
     required this.name,
     required this.ipAddress,
     required this.provider,
@@ -16,9 +17,15 @@ class ManagedServer {
     required this.assignedClient,
     required this.status,
     required this.notes,
+    this.vmCpuCores,
+    this.vmMemoryGb,
+    this.vmDiskGb,
+    this.vmStorage,
+    this.vmRole,
   });
 
   final String id;
+  final String? parentId;
   final String name;
   final String ipAddress;
   final String provider;
@@ -32,10 +39,18 @@ class ManagedServer {
   final String assignedClient;
   final ServerStatus status;
   final String notes;
+  final int? vmCpuCores;
+  final double? vmMemoryGb;
+  final double? vmDiskGb;
+  final String? vmStorage;
+  final String? vmRole;
+
+  bool get isVirtualMachine => parentId != null;
 
   factory ManagedServer.fromMap(Map<String, Object?> map) {
     return ManagedServer(
       id: map['id'] as String,
+      parentId: _readNullableString(map['parent_id']),
       name: map['name'] as String,
       ipAddress: map['ip_address'] as String,
       provider: map['provider'] as String,
@@ -49,6 +64,11 @@ class ManagedServer {
       assignedClient: map['assigned_client'] as String,
       status: ServerStatus.values.byName(map['status'] as String),
       notes: map['notes'] as String,
+      vmCpuCores: _readNullableInt(map['vm_cpu_cores']),
+      vmMemoryGb: _readNullableDouble(map['vm_memory_gb']),
+      vmDiskGb: _readNullableDouble(map['vm_disk_gb']),
+      vmStorage: _readNullableString(map['vm_storage']),
+      vmRole: _readNullableString(map['vm_role']),
     );
   }
 
@@ -66,7 +86,9 @@ class ManagedServer {
   bool get isRenewalUrgent => daysUntilRenewal <= 7;
 
   bool get needsRenewalReminder {
-    if (status == ServerStatus.retired || status == ServerStatus.suspended) {
+    if (isVirtualMachine ||
+        status == ServerStatus.retired ||
+        status == ServerStatus.suspended) {
       return false;
     }
 
@@ -75,6 +97,7 @@ class ManagedServer {
 
   ManagedServer copyWith({
     String? id,
+    Object? parentId = _unchanged,
     String? name,
     String? ipAddress,
     String? provider,
@@ -88,9 +111,15 @@ class ManagedServer {
     String? assignedClient,
     ServerStatus? status,
     String? notes,
+    int? vmCpuCores,
+    double? vmMemoryGb,
+    double? vmDiskGb,
+    Object? vmStorage = _unchanged,
+    Object? vmRole = _unchanged,
   }) {
     return ManagedServer(
       id: id ?? this.id,
+      parentId: parentId == _unchanged ? this.parentId : parentId as String?,
       name: name ?? this.name,
       ipAddress: ipAddress ?? this.ipAddress,
       provider: provider ?? this.provider,
@@ -104,12 +133,18 @@ class ManagedServer {
       assignedClient: assignedClient ?? this.assignedClient,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      vmCpuCores: vmCpuCores ?? this.vmCpuCores,
+      vmMemoryGb: vmMemoryGb ?? this.vmMemoryGb,
+      vmDiskGb: vmDiskGb ?? this.vmDiskGb,
+      vmStorage: vmStorage == _unchanged ? this.vmStorage : vmStorage as String?,
+      vmRole: vmRole == _unchanged ? this.vmRole : vmRole as String?,
     );
   }
 
   Map<String, Object?> toMap() {
     return {
       'id': id,
+      'parent_id': parentId,
       'name': name,
       'ip_address': ipAddress,
       'provider': provider,
@@ -123,8 +158,23 @@ class ManagedServer {
       'assigned_client': assignedClient,
       'status': status.name,
       'notes': notes,
+      'vm_cpu_cores': vmCpuCores,
+      'vm_memory_gb': vmMemoryGb,
+      'vm_disk_gb': vmDiskGb,
+      'vm_storage': vmStorage,
+      'vm_role': vmRole,
     };
   }
+}
+
+const _unchanged = Object();
+
+String? _readNullableString(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  final text = value.toString();
+  return text.isEmpty ? null : text;
 }
 
 double _readDouble(Object? value) {
@@ -132,6 +182,26 @@ double _readDouble(Object? value) {
     return value.toDouble();
   }
   return double.parse(value.toString());
+}
+
+int? _readNullableInt(Object? value) {
+  if (value == null || value.toString().isEmpty) {
+    return null;
+  }
+  if (value is int) {
+    return value;
+  }
+  return int.tryParse(value.toString());
+}
+
+double? _readNullableDouble(Object? value) {
+  if (value == null || value.toString().isEmpty) {
+    return null;
+  }
+  if (value is num) {
+    return value.toDouble();
+  }
+  return double.tryParse(value.toString());
 }
 
 extension ServerStatusLabel on ServerStatus {

@@ -25,6 +25,8 @@ class ServerDetailScreen extends StatelessWidget {
     }
 
     final dateFormat = DateFormat('MMM d, yyyy');
+    final subServers = store.childrenOf(server.id);
+    final isVm = server.isVirtualMachine;
 
     return Scaffold(
       appBar: AppBar(
@@ -38,18 +40,52 @@ class ServerDetailScreen extends StatelessWidget {
             ),
             icon: const Icon(Icons.edit_outlined),
           ),
+          if (!isVm)
+            IconButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ServerFormScreen(
+                    store: store,
+                    parentServer: server,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.add_box_outlined),
+            ),
           IconButton(
             onPressed: () => _confirmDelete(context, server),
             icon: const Icon(Icons.delete_outline),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
-        children: [
-          Card(
-            child: Padding(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFE0F2FE), Color(0xFFF5F3FF), Color(0xFFFFFBEB)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+          children: [
+            Container(
               padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF111827), Color(0xFF7C3AED), Color(0xFF0F766E)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.violet.withValues(alpha: 0.22),
+                    blurRadius: 22,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -58,45 +94,73 @@ class ServerDetailScreen extends StatelessWidget {
                       Expanded(
                         child: Text(
                           server.name,
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
                         ),
                       ),
                       ServerStatusChip(status: server.status),
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Text(server.ipAddress, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.accent)),
-                  const SizedBox(height: 18),
-                  _RenewalBanner(server: server),
+                  Text(server.ipAddress, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFFBAE6FD))),
+                  if (!isVm) ...[
+                    const SizedBox(height: 18),
+                    _RenewalBanner(server: server),
+                  ],
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-          _Section(
-            title: 'Server Information',
-            rows: [
-              _InfoRow('Provider', server.provider),
-              _InfoRow('Location', server.location),
-              _InfoRow('Specification', server.specification),
-              _InfoRow('Operating System', server.operatingSystem),
-              _InfoRow('Login User', server.loginUser),
+            const SizedBox(height: 14),
+            if (isVm)
+              _Section(
+                title: 'VM Configuration',
+                color: AppColors.info,
+                rows: [
+                  _InfoRow('Host Server', store.byId(server.parentId ?? '')?.name ?? 'Dedicated host'),
+                  _InfoRow('Operating System', server.operatingSystem),
+                  _InfoRow('vCPU', server.vmCpuCores?.toString() ?? 'Not set'),
+                  _InfoRow('Memory', server.vmMemoryGb == null ? 'Not set' : '${_formatNumber(server.vmMemoryGb!)} GB'),
+                  _InfoRow('Disk', server.vmDiskGb == null ? 'Not set' : '${_formatNumber(server.vmDiskGb!)} GB'),
+                  _InfoRow('Datastore', server.vmStorage ?? 'Not set'),
+                  _InfoRow('Role / Purpose', server.vmRole ?? 'Not set'),
+                  _InfoRow('Login User', server.loginUser),
+                  _InfoRow('Assigned Client', server.assignedClient),
+                ],
+              )
+            else ...[
+              _Section(
+                title: 'Server Information',
+                color: AppColors.info,
+                rows: [
+                  _InfoRow('Provider', server.provider),
+                  _InfoRow('Location', server.location),
+                  _InfoRow('Specification', server.specification),
+                  _InfoRow('Operating System / Hypervisor', server.operatingSystem),
+                  _InfoRow('Login User', server.loginUser),
+                ],
+              ),
+              _Section(
+                title: 'Billing & Client',
+                color: AppColors.success,
+                rows: [
+                  _InfoRow('Assigned Client', server.assignedClient),
+                  _InfoRow('Monthly Cost', '\$${server.monthlyCost.toStringAsFixed(2)}'),
+                  _InfoRow('Purchase Date', dateFormat.format(server.purchaseDate)),
+                  _InfoRow('Renewal Date', dateFormat.format(server.renewalDate)),
+                ],
+              ),
+              _SubServerSection(
+                store: store,
+                parent: server,
+                subServers: subServers,
+              ),
             ],
-          ),
-          _Section(
-            title: 'Billing & Client',
-            rows: [
-              _InfoRow('Assigned Client', server.assignedClient),
-              _InfoRow('Monthly Cost', '\$${server.monthlyCost.toStringAsFixed(2)}'),
-              _InfoRow('Purchase Date', dateFormat.format(server.purchaseDate)),
-              _InfoRow('Renewal Date', dateFormat.format(server.renewalDate)),
-            ],
-          ),
-          _Section(
-            title: 'Notes',
-            rows: [_InfoRow('Details', server.notes.isEmpty ? 'No notes added.' : server.notes)],
-          ),
-        ],
+            _Section(
+              title: 'Notes',
+              color: AppColors.violet,
+              rows: [_InfoRow('Details', server.notes.isEmpty ? 'No notes added.' : server.notes)],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -123,6 +187,142 @@ class ServerDetailScreen extends StatelessWidget {
   }
 }
 
+String _formatNumber(double value) {
+  return value.truncateToDouble() == value
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+}
+
+class _SubServerSection extends StatelessWidget {
+  const _SubServerSection({
+    required this.store,
+    required this.parent,
+    required this.subServers,
+  });
+
+  final ServerStore store;
+  final ManagedServer parent;
+  final List<ManagedServer> subServers;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: const BoxDecoration(
+                    color: AppColors.warning,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Sub Servers / VMs',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ServerFormScreen(
+                        store: store,
+                        parentServer: parent,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add VM'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (subServers.isEmpty)
+              const Text(
+                'No VMs added under this server yet.',
+                style: TextStyle(color: AppColors.textSecondary),
+              )
+            else
+              ...subServers.map(
+                (server) => _SubServerTile(
+                  server: server,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ServerDetailScreen(
+                        store: store,
+                        serverId: server.id,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubServerTile extends StatelessWidget {
+  const _SubServerTile({required this.server, required this.onTap});
+
+  final ManagedServer server;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.violetSoft,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.violet.withValues(alpha: 0.18)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.developer_board_outlined, color: AppColors.violet),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      server.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      server.ipAddress,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ServerStatusChip(status: server.status),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RenewalBanner extends StatelessWidget {
   const _RenewalBanner({required this.server});
 
@@ -138,14 +338,15 @@ class _RenewalBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: Colors.white.withValues(alpha: 0.16),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
           Icon(Icons.notifications_active_outlined, color: color),
           const SizedBox(width: 10),
-          Expanded(child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w800))),
+          Expanded(child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
         ],
       ),
     );
@@ -153,10 +354,11 @@ class _RenewalBanner extends StatelessWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.rows});
+  const _Section({required this.title, required this.rows, required this.color});
 
   final String title;
   final List<_InfoRow> rows;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +369,17 @@ class _Section extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            Row(
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              ],
+            ),
             const SizedBox(height: 12),
             ...rows,
           ],

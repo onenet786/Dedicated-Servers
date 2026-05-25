@@ -37,7 +37,7 @@ function require_api_key(): void
 
 function list_servers(): void
 {
-    $statement = db()->query('SELECT * FROM servers ORDER BY renewal_date ASC');
+    $statement = db()->query('SELECT * FROM servers ORDER BY COALESCE(parent_id, id), parent_id IS NOT NULL, renewal_date ASC');
     respond(['data' => $statement->fetchAll()]);
 }
 
@@ -74,6 +74,7 @@ function save_server(): void
     $sql = '
         INSERT INTO servers (
             id,
+            parent_id,
             name,
             ip_address,
             provider,
@@ -86,9 +87,15 @@ function save_server(): void
             renewal_date,
             assigned_client,
             status,
-            notes
+            notes,
+            vm_cpu_cores,
+            vm_memory_gb,
+            vm_disk_gb,
+            vm_storage,
+            vm_role
         ) VALUES (
             :id,
+            :parent_id,
             :name,
             :ip_address,
             :provider,
@@ -101,9 +108,15 @@ function save_server(): void
             :renewal_date,
             :assigned_client,
             :status,
-            :notes
+            :notes,
+            :vm_cpu_cores,
+            :vm_memory_gb,
+            :vm_disk_gb,
+            :vm_storage,
+            :vm_role
         )
         ON DUPLICATE KEY UPDATE
+            parent_id = VALUES(parent_id),
             name = VALUES(name),
             ip_address = VALUES(ip_address),
             provider = VALUES(provider),
@@ -116,12 +129,18 @@ function save_server(): void
             renewal_date = VALUES(renewal_date),
             assigned_client = VALUES(assigned_client),
             status = VALUES(status),
-            notes = VALUES(notes)
+            notes = VALUES(notes),
+            vm_cpu_cores = VALUES(vm_cpu_cores),
+            vm_memory_gb = VALUES(vm_memory_gb),
+            vm_disk_gb = VALUES(vm_disk_gb),
+            vm_storage = VALUES(vm_storage),
+            vm_role = VALUES(vm_role)
     ';
 
     $statement = db()->prepare($sql);
     $statement->execute([
         ':id' => (string) $payload['id'],
+        ':parent_id' => empty($payload['parent_id']) ? null : (string) $payload['parent_id'],
         ':name' => (string) $payload['name'],
         ':ip_address' => (string) $payload['ip_address'],
         ':provider' => (string) $payload['provider'],
@@ -135,6 +154,11 @@ function save_server(): void
         ':assigned_client' => (string) $payload['assigned_client'],
         ':status' => (string) $payload['status'],
         ':notes' => (string) $payload['notes'],
+        ':vm_cpu_cores' => empty($payload['vm_cpu_cores']) ? null : (int) $payload['vm_cpu_cores'],
+        ':vm_memory_gb' => empty($payload['vm_memory_gb']) ? null : (float) $payload['vm_memory_gb'],
+        ':vm_disk_gb' => empty($payload['vm_disk_gb']) ? null : (float) $payload['vm_disk_gb'],
+        ':vm_storage' => empty($payload['vm_storage']) ? null : (string) $payload['vm_storage'],
+        ':vm_role' => empty($payload['vm_role']) ? null : (string) $payload['vm_role'],
     ]);
 
     respond(['data' => ['saved' => true]]);
@@ -147,7 +171,7 @@ function delete_server(): void
         respond(['error' => 'Missing id'], 422);
     }
 
-    $statement = db()->prepare('DELETE FROM servers WHERE id = :id');
+    $statement = db()->prepare('DELETE FROM servers WHERE id = :id OR parent_id = :id');
     $statement->execute([':id' => $id]);
     respond(['data' => ['deleted' => true]]);
 }

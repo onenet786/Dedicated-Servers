@@ -24,21 +24,34 @@ try {
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         handle_form_submit($statuses);
-        header('Location: index.php');
-        exit;
-    }
-
-    $editingServer = null;
-    if (isset($_GET['edit'])) {
-        $editingServer = find_server((string) $_GET['edit']);
     }
 
     $servers = fetch_servers();
+    $page = (string) ($_GET['page'] ?? 'list');
+
+    render_layout(function () use ($page, $servers, $statuses, $statusLabels): void {
+        if ($page === 'form') {
+            render_form_view($servers, $statuses, $statusLabels);
+            return;
+        }
+
+        if ($page === 'detail') {
+            render_detail_view($servers, $statusLabels);
+            return;
+        }
+
+        if ($page === 'reports') {
+            render_reports_view($servers, $statusLabels);
+            return;
+        }
+
+        render_list_view($servers, $statusLabels);
+    }, $servers);
 } catch (Throwable $exception) {
     http_response_code(500);
-    $error = $exception->getMessage();
-    $servers = [];
-    $editingServer = null;
+    render_layout(function () use ($exception): void {
+        echo '<div class="error">' . h($exception->getMessage()) . '</div>';
+    }, []);
 }
 
 function handle_auth(): void
@@ -67,126 +80,34 @@ function is_logged_in(): bool
     return ($_SESSION['server_manager_logged_in'] ?? false) === true;
 }
 
-function render_login(): void
-{
-    $error = $_SESSION['server_manager_login_error'] ?? '';
-    unset($_SESSION['server_manager_login_error']);
-    ?>
-    <!doctype html>
-    <html lang="en">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Server Manager Login</title>
-      <style>
-        body {
-          align-items: center;
-          background: #f7f9fb;
-          color: #111827;
-          display: flex;
-          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          justify-content: center;
-          margin: 0;
-          min-height: 100vh;
-          padding: 20px;
-        }
-
-        form {
-          background: white;
-          border: 1px solid #e5e7eb;
-          border-radius: 8px;
-          max-width: 390px;
-          padding: 20px;
-          width: 100%;
-        }
-
-        h1 {
-          align-items: center;
-          display: flex;
-          font-size: 22px;
-          gap: 10px;
-          margin: 0 0 16px;
-        }
-
-        h1 img {
-          border-radius: 8px;
-          height: 34px;
-          width: 34px;
-        }
-
-        label {
-          color: #4b5563;
-          display: grid;
-          font-size: 12px;
-          font-weight: 800;
-          gap: 6px;
-        }
-
-        input {
-          border: 1px solid #e5e7eb;
-          border-radius: 6px;
-          font: inherit;
-          min-height: 42px;
-          padding: 10px 11px;
-        }
-
-        button {
-          background: #111827;
-          border: 0;
-          border-radius: 6px;
-          color: white;
-          cursor: pointer;
-          font: inherit;
-          font-weight: 800;
-          margin-top: 14px;
-          min-height: 42px;
-          width: 100%;
-        }
-
-        .error {
-          color: #991b1b;
-          font-size: 14px;
-          margin-bottom: 12px;
-        }
-      </style>
-    </head>
-    <body>
-      <form method="post">
-        <h1><img src="assets/icon-192.png" alt=""> Server Manager</h1>
-        <?php if ($error): ?>
-          <div class="error"><?= h($error) ?></div>
-        <?php endif; ?>
-        <input type="hidden" name="action" value="login">
-        <label>Password
-          <input name="password" type="password" required autofocus>
-        </label>
-        <button type="submit">Sign In</button>
-      </form>
-    </body>
-    </html>
-    <?php
-}
-
-function handle_form_submit(array $statuses): void
+function handle_form_submit(array $statuses): never
 {
     $action = $_POST['action'] ?? '';
+    $id = (string) ($_POST['id'] ?? '');
 
     if ($action === 'delete') {
-        delete_server((string) ($_POST['id'] ?? ''));
-        return;
+        delete_server($id);
+        header('Location: index.php');
+        exit;
     }
 
     if ($action !== 'save') {
-        return;
+        header('Location: index.php');
+        exit;
     }
 
+    $parentId = trim((string) ($_POST['parent_id'] ?? '')) ?: null;
     $status = (string) ($_POST['status'] ?? 'active');
     if (!in_array($status, $statuses, true)) {
         $status = 'active';
     }
 
+    $savedId = trim($id) ?: bin2hex(random_bytes(16));
+    $isVm = $parentId !== null;
+
     $server = [
-        'id' => trim((string) ($_POST['id'] ?? '')) ?: bin2hex(random_bytes(16)),
+        'id' => $savedId,
+        'parent_id' => $parentId,
         'name' => trim((string) ($_POST['name'] ?? '')),
         'ip_address' => trim((string) ($_POST['ip_address'] ?? '')),
         'provider' => trim((string) ($_POST['provider'] ?? '')),
@@ -194,66 +115,70 @@ function handle_form_submit(array $statuses): void
         'specification' => trim((string) ($_POST['specification'] ?? '')),
         'operating_system' => trim((string) ($_POST['operating_system'] ?? '')),
         'login_user' => trim((string) ($_POST['login_user'] ?? '')),
-        'monthly_cost' => (float) ($_POST['monthly_cost'] ?? 0),
+        'monthly_cost' => $isVm ? 0 : (float) ($_POST['monthly_cost'] ?? 0),
         'purchase_date' => date_to_iso((string) ($_POST['purchase_date'] ?? '')),
         'renewal_date' => date_to_iso((string) ($_POST['renewal_date'] ?? '')),
         'assigned_client' => trim((string) ($_POST['assigned_client'] ?? '')),
         'status' => $status,
         'notes' => trim((string) ($_POST['notes'] ?? '')),
+        'vm_cpu_cores' => trim((string) ($_POST['vm_cpu_cores'] ?? '')) ?: null,
+        'vm_memory_gb' => trim((string) ($_POST['vm_memory_gb'] ?? '')) ?: null,
+        'vm_disk_gb' => trim((string) ($_POST['vm_disk_gb'] ?? '')) ?: null,
+        'vm_storage' => trim((string) ($_POST['vm_storage'] ?? '')) ?: null,
+        'vm_role' => trim((string) ($_POST['vm_role'] ?? '')) ?: null,
     ];
 
+    if ($isVm && $server['specification'] === '') {
+        $server['specification'] = vm_spec_text($server);
+    }
+
     save_server($server);
+    header('Location: index.php?page=detail&id=' . urlencode($parentId ?? $savedId));
+    exit;
 }
 
 function fetch_servers(): array
 {
-    $statement = db()->query('SELECT * FROM servers ORDER BY renewal_date ASC');
+    $statement = db()->query('SELECT * FROM servers ORDER BY COALESCE(parent_id, id), parent_id IS NOT NULL, renewal_date ASC');
     return $statement->fetchAll();
 }
 
-function find_server(string $id): ?array
+function find_server(array $servers, string $id): ?array
 {
-    $statement = db()->prepare('SELECT * FROM servers WHERE id = :id');
-    $statement->execute([':id' => $id]);
-    $server = $statement->fetch();
-    return $server ?: null;
+    foreach ($servers as $server) {
+        if ((string) $server['id'] === $id) {
+            return $server;
+        }
+    }
+    return null;
+}
+
+function root_servers(array $servers): array
+{
+    return array_values(array_filter($servers, fn(array $server): bool => empty($server['parent_id'])));
+}
+
+function child_servers(array $servers, string $parentId): array
+{
+    return array_values(array_filter($servers, fn(array $server): bool => (string) ($server['parent_id'] ?? '') === $parentId));
 }
 
 function save_server(array $server): void
 {
     $sql = '
         INSERT INTO servers (
-            id,
-            name,
-            ip_address,
-            provider,
-            location,
-            specification,
-            operating_system,
-            login_user,
-            monthly_cost,
-            purchase_date,
-            renewal_date,
-            assigned_client,
-            status,
-            notes
+            id, parent_id, name, ip_address, provider, location, specification,
+            operating_system, login_user, monthly_cost, purchase_date, renewal_date,
+            assigned_client, status, notes, vm_cpu_cores, vm_memory_gb, vm_disk_gb,
+            vm_storage, vm_role
         ) VALUES (
-            :id,
-            :name,
-            :ip_address,
-            :provider,
-            :location,
-            :specification,
-            :operating_system,
-            :login_user,
-            :monthly_cost,
-            :purchase_date,
-            :renewal_date,
-            :assigned_client,
-            :status,
-            :notes
+            :id, :parent_id, :name, :ip_address, :provider, :location, :specification,
+            :operating_system, :login_user, :monthly_cost, :purchase_date, :renewal_date,
+            :assigned_client, :status, :notes, :vm_cpu_cores, :vm_memory_gb, :vm_disk_gb,
+            :vm_storage, :vm_role
         )
         ON DUPLICATE KEY UPDATE
+            parent_id = VALUES(parent_id),
             name = VALUES(name),
             ip_address = VALUES(ip_address),
             provider = VALUES(provider),
@@ -266,11 +191,17 @@ function save_server(array $server): void
             renewal_date = VALUES(renewal_date),
             assigned_client = VALUES(assigned_client),
             status = VALUES(status),
-            notes = VALUES(notes)
+            notes = VALUES(notes),
+            vm_cpu_cores = VALUES(vm_cpu_cores),
+            vm_memory_gb = VALUES(vm_memory_gb),
+            vm_disk_gb = VALUES(vm_disk_gb),
+            vm_storage = VALUES(vm_storage),
+            vm_role = VALUES(vm_role)
     ';
 
     db()->prepare($sql)->execute([
         ':id' => $server['id'],
+        ':parent_id' => $server['parent_id'],
         ':name' => $server['name'],
         ':ip_address' => $server['ip_address'],
         ':provider' => $server['provider'],
@@ -284,6 +215,11 @@ function save_server(array $server): void
         ':assigned_client' => $server['assigned_client'],
         ':status' => $server['status'],
         ':notes' => $server['notes'],
+        ':vm_cpu_cores' => $server['vm_cpu_cores'],
+        ':vm_memory_gb' => $server['vm_memory_gb'],
+        ':vm_disk_gb' => $server['vm_disk_gb'],
+        ':vm_storage' => $server['vm_storage'],
+        ':vm_role' => $server['vm_role'],
     ]);
 }
 
@@ -293,8 +229,668 @@ function delete_server(string $id): void
         return;
     }
 
-    $statement = db()->prepare('DELETE FROM servers WHERE id = :id');
+    $statement = db()->prepare('DELETE FROM servers WHERE id = :id OR parent_id = :id');
     $statement->execute([':id' => $id]);
+}
+
+function render_layout(callable $content, array $servers): void
+{
+    $roots = root_servers($servers);
+    $vmCount = count($servers) - count($roots);
+    $dueNotifications = due_notification_payloads($roots);
+    ?>
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta name="theme-color" content="#111827">
+      <title>Server Manager</title>
+      <link rel="icon" type="image/png" href="assets/favicon.png">
+      <link rel="apple-touch-icon" href="assets/icon-192.png">
+      <link rel="manifest" href="site.webmanifest">
+      <style>
+        :root {
+          --ink: #111827;
+          --muted: #4b5563;
+          --line: #e5e7eb;
+          --panel: #ffffff;
+          --blue: #2563eb;
+          --teal: #0f766e;
+          --violet: #7c3aed;
+          --green: #059669;
+          --amber: #d97706;
+          --red: #dc2626;
+          --soft-blue: #e0f2fe;
+          --soft-violet: #f5f3ff;
+          --soft-amber: #fffbeb;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          color: var(--ink);
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          background: linear-gradient(135deg, var(--soft-blue), var(--soft-violet), var(--soft-amber));
+          min-height: 100vh;
+        }
+        .topbar { background: #111827; color: white; position: sticky; top: 0; z-index: 5; }
+        .topbar-inner { max-width: 1180px; margin: 0 auto; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .brand img { width: 36px; height: 36px; border-radius: 10px; }
+        .brand strong { font-size: 18px; }
+        .top-actions { display: flex; align-items: center; gap: 10px; }
+        .shell { max-width: 1180px; margin: 0 auto; padding: 18px; }
+        .hero {
+          background: linear-gradient(135deg, #111827, #0f766e, #2563eb);
+          color: white;
+          border-radius: 16px;
+          padding: 20px;
+          box-shadow: 0 18px 38px rgba(37, 99, 235, .22);
+          margin-bottom: 18px;
+        }
+        .hero h1 { margin: 5px 0 16px; font-size: 26px; }
+        .eyebrow { color: #bfdbfe; font-size: 12px; font-weight: 800; }
+        .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .metric { background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.18); border-radius: 12px; padding: 12px; }
+        .metric strong { display: block; font-size: 22px; margin-bottom: 3px; }
+        .metric span { color: #dbeafe; font-size: 12px; }
+        .panel { background: rgba(255,255,255,.94); border: 1px solid rgba(224,231,255,.9); border-radius: 12px; box-shadow: 0 8px 24px rgba(17,24,39,.08); padding: 16px; margin-bottom: 14px; }
+        .panel-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .panel-title h2 { margin: 0; font-size: 17px; }
+        .server-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+        .server-card { display: block; color: inherit; text-decoration: none; background: white; border: 1px solid #e0e7ff; border-left: 5px solid var(--teal); border-radius: 12px; padding: 14px; }
+        .server-card:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(17,24,39,.08); }
+        .server-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+        .server-name { font-weight: 850; }
+        .muted { color: var(--muted); font-size: 13px; }
+        .chip { border-radius: 6px; display: inline-flex; font-size: 12px; font-weight: 800; padding: 5px 9px; white-space: nowrap; border: 1px solid transparent; }
+        .active { background: #ecfdf5; color: #059669; border-color: rgba(5,150,105,.18); }
+        .dueSoon { background: #fffbeb; color: #d97706; border-color: rgba(217,119,6,.18); }
+        .overdue { background: #fef2f2; color: #dc2626; border-color: rgba(220,38,38,.18); }
+        .suspended { background: #f5f3ff; color: #7c3aed; border-color: rgba(124,58,237,.18); }
+        .retired { background: #f1f5f9; color: #64748b; border-color: rgba(100,116,139,.18); }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .info { background: #f8fafc; border-radius: 10px; border: 1px solid var(--line); padding: 12px; }
+        .info span { display: block; color: var(--muted); font-size: 12px; font-weight: 800; margin-bottom: 4px; }
+        .button, button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 13px; border-radius: 8px; border: 0; background: #111827; color: white; text-decoration: none; font: inherit; font-weight: 800; cursor: pointer; }
+        .button.secondary { background: #f3f4f6; color: #374151; }
+        .button.teal { background: var(--teal); }
+        .button.danger, button.danger { background: var(--red); }
+        .button.notify { background: #7c3aed; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        form.grid { display: grid; gap: 12px; }
+        label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 800; }
+        input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; font: inherit; color: var(--ink); background: white; }
+        textarea { min-height: 92px; resize: vertical; }
+        input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(15,118,110,.12); }
+        .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .empty, .error { color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; }
+        .vm-card { border-left-color: var(--violet); }
+        .report-stack { display: grid; gap: 14px; }
+        .report-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+        .report-metric { background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+        .report-metric span { color: var(--muted); display: block; font-size: 12px; font-weight: 800; margin-top: 4px; }
+        .report-metric strong { font-size: 22px; }
+        .report-row { margin-bottom: 11px; }
+        .report-row-head { align-items: center; display: flex; gap: 10px; justify-content: space-between; margin-bottom: 6px; }
+        .report-row-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .report-row-head span { color: var(--muted); font-size: 12px; font-weight: 800; white-space: nowrap; }
+        .bar { background: #e5e7eb; border-radius: 999px; height: 8px; overflow: hidden; }
+        .bar i { background: linear-gradient(90deg, var(--teal), var(--blue)); display: block; height: 100%; }
+        .report-line { align-items: center; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; display: flex; gap: 10px; justify-content: space-between; margin-bottom: 10px; padding: 12px; }
+        .report-line strong { display: block; }
+        .report-line span { color: var(--muted); font-size: 13px; }
+        .report-line b { color: var(--teal); white-space: nowrap; }
+        @media (max-width: 700px) {
+          .metrics, .split { grid-template-columns: 1fr; }
+          .topbar-inner { align-items: flex-start; flex-direction: column; }
+          .top-actions { flex-wrap: wrap; }
+        }
+      </style>
+    </head>
+    <body>
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="brand" href="index.php" style="color:white;text-decoration:none;">
+            <img src="assets/icon-192.png" alt="">
+            <strong>Server Manager</strong>
+          </a>
+          <div class="top-actions">
+            <a class="button secondary" href="index.php?page=form">Add Server</a>
+            <a class="button secondary" href="index.php?page=reports">Reports</a>
+            <button class="button notify" type="button" onclick="testNotification()">Test Notification</button>
+            <a class="button secondary" href="index.php?logout=1">Logout</a>
+          </div>
+        </div>
+      </header>
+      <main class="shell">
+        <?php $content(); ?>
+      </main>
+      <script>
+        const dueNotifications = <?= json_encode($dueNotifications, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+
+        async function notificationRegistration() {
+          if (!('serviceWorker' in navigator)) {
+            return null;
+          }
+          try {
+            const registration = await navigator.serviceWorker.register('./sw.js?v=4', { scope: './' });
+            await registration.update();
+            const ready = navigator.serviceWorker.ready;
+            const timeout = new Promise((resolve) => {
+              setTimeout(() => resolve(null), 2500);
+            });
+            return await Promise.race([ready, timeout]);
+          } catch (error) {
+            console.warn('Service worker registration failed', error);
+            return null;
+          }
+        }
+
+        async function ensureNotificationPermission() {
+          if (!('Notification' in window)) {
+            alert('This browser does not support system notifications.');
+            return false;
+          }
+          if (Notification.permission === 'granted') {
+            return true;
+          }
+          if (Notification.permission === 'denied') {
+            alert('Notifications are blocked. Enable them in browser/site settings.');
+            return false;
+          }
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            alert('Permission allowed. Press Test Notification again to send the system tray notification.');
+          } else {
+            console.warn('Notification permission was not allowed.');
+          }
+          return false;
+        }
+
+        async function showBrowserNotification(title, options) {
+          const registration = await notificationRegistration();
+          if (registration && 'showNotification' in registration) {
+            await registration.showNotification(title, options);
+            return true;
+          }
+
+          if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              title,
+              options
+            });
+            return true;
+          }
+
+          new Notification(title, options);
+          return true;
+        }
+
+        async function testNotification() {
+          if (!(await ensureNotificationPermission())) {
+            return;
+          }
+          try {
+            const shown = await showBrowserNotification('Server Manager test', {
+              body: 'Browser notifications are working for this dashboard.',
+              icon: 'assets/icon-192.png',
+              badge: 'assets/favicon.png',
+              tag: 'server-manager-test',
+              requireInteraction: true
+            });
+            if (!shown) {
+              alert('Browser accepted permission, but did not show the system notification. Check OS/browser notification settings.');
+            }
+          } catch (error) {
+            console.error('Notification failed', error);
+            alert('System notification could not be shown. Check browser and OS notification settings.');
+          }
+        }
+
+        async function showDueNotificationsOnceDaily() {
+          if (!dueNotifications.length || !('Notification' in window)) {
+            return;
+          }
+          if (Notification.permission !== 'granted') {
+            return;
+          }
+          const today = new Date().toISOString().slice(0, 10);
+          const key = 'server-manager-web-renewal-notified';
+          if (localStorage.getItem(key) === today) {
+            return;
+          }
+          for (const item of dueNotifications) {
+            await showBrowserNotification(item.title, {
+              body: item.body,
+              icon: 'assets/icon-192.png',
+              badge: 'assets/favicon.png'
+            });
+          }
+          localStorage.setItem(key, today);
+        }
+
+        showDueNotificationsOnceDaily();
+      </script>
+    </body>
+    </html>
+    <?php
+}
+
+function due_notification_payloads(array $servers): array
+{
+    $payloads = [];
+    foreach ($servers as $server) {
+        if (in_array($server['status'], ['retired', 'suspended'], true)) {
+            continue;
+        }
+        $days = days_until($server['renewal_date'] ?? null);
+        if ($days > 7) {
+            continue;
+        }
+        $payloads[] = [
+            'title' => $days < 0
+                ? $server['name'] . ' renewal is overdue'
+                : $server['name'] . ' renewal due soon',
+            'body' => $days < 0
+                ? $server['assigned_client'] . ' renewal was due ' . abs($days) . ' day(s) ago.'
+                : $server['assigned_client'] . ' renewal is due in ' . $days . ' day(s).',
+        ];
+    }
+    return $payloads;
+}
+
+function render_list_view(array $servers, array $statusLabels): void
+{
+    $roots = root_servers($servers);
+    $vmCount = count($servers) - count($roots);
+    $dueSoon = count(array_filter($roots, fn(array $server): bool => days_until($server['renewal_date'] ?? null) <= 7));
+    $monthly = array_sum(array_map(fn(array $server): float => (float) $server['monthly_cost'], $roots));
+    ?>
+    <section class="hero">
+      <div class="eyebrow">Infrastructure Overview</div>
+      <h1><?= count($roots) ?> dedicated servers</h1>
+      <div class="metrics">
+        <div class="metric"><strong><?= $dueSoon ?></strong><span>Due soon</span></div>
+        <div class="metric"><strong><?= $vmCount ?></strong><span>VMs</span></div>
+        <div class="metric"><strong>$<?= number_format($monthly, 0) ?></strong><span>Monthly</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>Servers (<?= count($roots) ?>)</h2>
+        <a class="button teal" href="index.php?page=form">Add Server</a>
+      </div>
+      <?php if (!$roots): ?>
+        <div class="empty">No dedicated servers saved yet.</div>
+      <?php else: ?>
+        <div class="server-grid">
+          <?php foreach ($roots as $server): ?>
+            <?php render_server_card($server, $servers, $statusLabels); ?>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </section>
+    <?php
+}
+
+function render_reports_view(array $servers, array $statusLabels): void
+{
+    $roots = root_servers($servers);
+    $vms = array_values(array_filter($servers, fn(array $server): bool => !empty($server['parent_id'])));
+    $monthly = array_sum(array_map(fn(array $server): float => (float) $server['monthly_cost'], $roots));
+    $due30 = array_values(array_filter($roots, fn(array $server): bool => days_until($server['renewal_date'] ?? null) <= 30));
+    usort($due30, fn(array $a, array $b): int => strcmp((string) $a['renewal_date'], (string) $b['renewal_date']));
+    $vmCpu = array_sum(array_map(fn(array $server): int => (int) ($server['vm_cpu_cores'] ?? 0), $vms));
+    $vmRam = array_sum(array_map(fn(array $server): float => (float) ($server['vm_memory_gb'] ?? 0), $vms));
+    $vmDisk = array_sum(array_map(fn(array $server): float => (float) ($server['vm_disk_gb'] ?? 0), $vms));
+    ?>
+    <section class="hero">
+      <div class="eyebrow">Operational Reports</div>
+      <h1>Server estate intelligence</h1>
+      <div class="metrics">
+        <div class="metric"><strong><?= count($roots) ?></strong><span>Dedicated</span></div>
+        <div class="metric"><strong><?= count($vms) ?></strong><span>VMs</span></div>
+        <div class="metric"><strong>$<?= number_format($monthly, 0) ?></strong><span>Monthly</span></div>
+      </div>
+    </section>
+
+    <div class="report-stack">
+      <section class="panel">
+        <div class="panel-title"><h2>Dedicated Servers Report</h2></div>
+        <div class="report-metrics">
+          <?php report_metric('Total', (string) count($roots)); ?>
+          <?php report_metric('Active', (string) count_status($roots, 'active')); ?>
+          <?php report_metric('Due / Overdue', (string) count(array_filter($roots, fn(array $server): bool => days_until($server['renewal_date'] ?? null) <= 7))); ?>
+          <?php report_metric('Monthly', '$' . number_format($monthly, 0)); ?>
+        </div>
+        <?php foreach ($statusLabels as $status => $label): ?>
+          <?php report_bar($label, count_status($roots, $status), max(count($roots), 1)); ?>
+        <?php endforeach; ?>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><h2>Virtual Machines Report</h2></div>
+        <div class="report-metrics">
+          <?php report_metric('VMs', (string) count($vms)); ?>
+          <?php report_metric('vCPU', (string) $vmCpu); ?>
+          <?php report_metric('RAM', number_format($vmRam, 1) . ' GB'); ?>
+          <?php report_metric('Disk', number_format($vmDisk, 1) . ' GB'); ?>
+        </div>
+        <?php report_group_bars(group_count($vms, 'operating_system'), count($vms), 'No VM operating systems recorded.'); ?>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><h2>Renewal Due Report</h2></div>
+        <div class="report-metrics">
+          <?php report_metric('Overdue', (string) count(array_filter($roots, fn(array $server): bool => days_until($server['renewal_date'] ?? null) < 0))); ?>
+          <?php report_metric('7 Days', (string) count(array_filter($roots, fn(array $server): bool => days_until($server['renewal_date'] ?? null) >= 0 && days_until($server['renewal_date'] ?? null) <= 7))); ?>
+          <?php report_metric('30 Days', (string) count($due30)); ?>
+        </div>
+        <?php if (!$due30): ?>
+          <div class="empty">No dedicated server renewals due in the next 30 days.</div>
+        <?php else: ?>
+          <?php foreach (array_slice($due30, 0, 8) as $server): ?>
+            <?php
+              $days = days_until($server['renewal_date'] ?? null);
+              $renewal = date_for_input($server['renewal_date'] ?? null);
+              report_line($server['name'], $server['assigned_client'] . ' - ' . $renewal, $days < 0 ? abs($days) . 'd overdue' : $days . 'd left');
+            ?>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><h2>Cost & Provider Report</h2></div>
+        <?php report_money_bars(group_sum($roots, 'provider', 'monthly_cost'), $monthly, 'No provider cost data available.'); ?>
+        <hr>
+        <?php report_money_bars(group_sum($roots, 'assigned_client', 'monthly_cost'), $monthly, 'No client cost data available.'); ?>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><h2>Host & VM Allocation Report</h2></div>
+        <?php if (!$roots): ?>
+          <div class="empty">No dedicated hosts available.</div>
+        <?php else: ?>
+          <?php foreach ($roots as $host): ?>
+            <?php
+              $children = child_servers($servers, (string) $host['id']);
+              $cpu = array_sum(array_map(fn(array $server): int => (int) ($server['vm_cpu_cores'] ?? 0), $children));
+              $ram = array_sum(array_map(fn(array $server): float => (float) ($server['vm_memory_gb'] ?? 0), $children));
+              $disk = array_sum(array_map(fn(array $server): float => (float) ($server['vm_disk_gb'] ?? 0), $children));
+              report_line($host['name'], count($children) . ' VM(s), ' . $cpu . ' vCPU, ' . number_format($ram, 1) . ' GB RAM, ' . number_format($disk, 1) . ' GB disk', $host['provider']);
+            ?>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><h2>Client Allocation Report</h2></div>
+        <?php report_group_bars(group_count($servers, 'assigned_client'), count($servers), 'No client allocation data available.'); ?>
+      </section>
+    </div>
+    <?php
+}
+
+function render_detail_view(array $servers, array $statusLabels): void
+{
+    $id = (string) ($_GET['id'] ?? '');
+    $server = find_server($servers, $id);
+
+    if (!$server) {
+        echo '<div class="empty">Server not found.</div>';
+        return;
+    }
+
+    $isVm = !empty($server['parent_id']);
+    $children = child_servers($servers, (string) $server['id']);
+    $parent = $isVm ? find_server($servers, (string) $server['parent_id']) : null;
+    ?>
+    <section class="hero">
+      <div class="eyebrow"><?= $isVm ? 'Virtual Machine' : 'Dedicated Server' ?></div>
+      <h1><?= h($server['name']) ?></h1>
+      <p><?= h($server['ip_address']) ?> &nbsp; <span class="chip <?= h($server['status']) ?>"><?= h($statusLabels[$server['status']] ?? $server['status']) ?></span></p>
+      <div class="actions">
+        <a class="button secondary" href="index.php">Back</a>
+        <a class="button secondary" href="index.php?page=form&id=<?= urlencode($server['id']) ?>">Edit</a>
+        <?php if (!$isVm): ?>
+          <a class="button teal" href="index.php?page=form&parent_id=<?= urlencode($server['id']) ?>">Add VM</a>
+        <?php endif; ?>
+        <form method="post" onsubmit="return confirm('Delete this record?');">
+          <input type="hidden" name="action" value="delete">
+          <input type="hidden" name="id" value="<?= h($server['id']) ?>">
+          <button class="danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </section>
+
+    <?php if ($isVm): ?>
+      <section class="panel">
+        <div class="panel-title"><h2>VM Configuration</h2></div>
+        <div class="info-grid">
+          <?php info('Host Server', $parent['name'] ?? 'Dedicated host'); ?>
+          <?php info('Operating System', $server['operating_system']); ?>
+          <?php info('vCPU', $server['vm_cpu_cores'] ?: 'Not set'); ?>
+          <?php info('Memory', $server['vm_memory_gb'] ? number_format((float) $server['vm_memory_gb'], 1) . ' GB' : 'Not set'); ?>
+          <?php info('Disk', $server['vm_disk_gb'] ? number_format((float) $server['vm_disk_gb'], 1) . ' GB' : 'Not set'); ?>
+          <?php info('Datastore', $server['vm_storage'] ?: 'Not set'); ?>
+          <?php info('Role / Purpose', $server['vm_role'] ?: 'Not set'); ?>
+          <?php info('Login User', $server['login_user']); ?>
+          <?php info('Assigned Client', $server['assigned_client']); ?>
+        </div>
+      </section>
+    <?php else: ?>
+      <section class="panel">
+        <div class="panel-title"><h2>Server Information</h2></div>
+        <div class="info-grid">
+          <?php info('Provider', $server['provider']); ?>
+          <?php info('Location', $server['location']); ?>
+          <?php info('Specification', $server['specification']); ?>
+          <?php info('OS / Hypervisor', $server['operating_system']); ?>
+          <?php info('Login User', $server['login_user']); ?>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-title"><h2>Billing & Client</h2></div>
+        <div class="info-grid">
+          <?php info('Assigned Client', $server['assigned_client']); ?>
+          <?php info('Monthly Cost', '$' . number_format((float) $server['monthly_cost'], 2)); ?>
+          <?php info('Purchase Date', date_for_input($server['purchase_date'])); ?>
+          <?php info('Renewal Date', date_for_input($server['renewal_date']) . ' (' . renewal_text($server['renewal_date']) . ')'); ?>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">
+          <h2>Sub Servers / VMs</h2>
+          <a class="button teal" href="index.php?page=form&parent_id=<?= urlencode($server['id']) ?>">Add VM</a>
+        </div>
+        <?php if (!$children): ?>
+          <div class="empty">No VMs added under this server yet.</div>
+        <?php else: ?>
+          <div class="server-grid">
+            <?php foreach ($children as $child): ?>
+              <?php render_server_card($child, $servers, $statusLabels, true); ?>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+      </section>
+    <?php endif; ?>
+
+    <section class="panel">
+      <div class="panel-title"><h2>Notes</h2></div>
+      <p><?= h($server['notes'] ?: 'No notes added.') ?></p>
+    </section>
+    <?php
+}
+
+function render_form_view(array $servers, array $statuses, array $statusLabels): void
+{
+    $id = (string) ($_GET['id'] ?? '');
+    $parentId = (string) ($_GET['parent_id'] ?? '');
+    $editing = $id !== '' ? find_server($servers, $id) : null;
+    $parent = $parentId !== '' ? find_server($servers, $parentId) : null;
+    $isVm = $editing ? !empty($editing['parent_id']) : $parent !== null;
+    $form = $editing ?? default_form($parent);
+    ?>
+    <section class="hero">
+      <div class="eyebrow"><?= $editing ? 'Edit Record' : ($isVm ? 'Add Virtual Machine' : 'Add Dedicated Server') ?></div>
+      <h1><?= $editing ? h($form['name']) : ($isVm ? 'Create a VM under ' . h($parent['name'] ?? 'host') : 'Create a dedicated server') ?></h1>
+    </section>
+
+    <section class="panel">
+      <form method="post" class="grid">
+        <input type="hidden" name="action" value="save">
+        <input type="hidden" name="id" value="<?= h($form['id']) ?>">
+        <input type="hidden" name="parent_id" value="<?= h((string) ($form['parent_id'] ?? $parentId)) ?>">
+
+        <label><?= $isVm ? 'VM Name' : 'Server Name' ?>
+          <input name="name" value="<?= h($form['name']) ?>" required>
+        </label>
+        <label>IP Address
+          <input name="ip_address" value="<?= h($form['ip_address']) ?>" required>
+        </label>
+
+        <?php if (!$isVm): ?>
+          <div class="split">
+            <label>Provider<input name="provider" value="<?= h($form['provider']) ?>" required></label>
+            <label>Location<input name="location" value="<?= h($form['location']) ?>" required></label>
+          </div>
+          <label>Dedicated Server Specification
+            <textarea name="specification" required><?= h($form['specification']) ?></textarea>
+          </label>
+          <label>Host OS / Hypervisor
+            <input name="operating_system" value="<?= h($form['operating_system']) ?>" required>
+          </label>
+        <?php else: ?>
+          <input type="hidden" name="provider" value="<?= h($form['provider']) ?>">
+          <input type="hidden" name="location" value="<?= h($form['location']) ?>">
+          <input type="hidden" name="specification" value="<?= h($form['specification']) ?>">
+          <label>VM OS Type / Version
+            <input name="operating_system" value="<?= h($form['operating_system']) ?>" required>
+          </label>
+          <label>VM Role / Purpose
+            <input name="vm_role" value="<?= h((string) ($form['vm_role'] ?? '')) ?>">
+          </label>
+          <div class="split">
+            <label>vCPU<input name="vm_cpu_cores" type="number" min="0" step="1" value="<?= h((string) ($form['vm_cpu_cores'] ?? '')) ?>" required></label>
+            <label>RAM GB<input name="vm_memory_gb" type="number" min="0" step="0.01" value="<?= h((string) ($form['vm_memory_gb'] ?? '')) ?>" required></label>
+          </div>
+          <div class="split">
+            <label>Disk GB<input name="vm_disk_gb" type="number" min="0" step="0.01" value="<?= h((string) ($form['vm_disk_gb'] ?? '')) ?>" required></label>
+            <label>Datastore<input name="vm_storage" value="<?= h((string) ($form['vm_storage'] ?? '')) ?>"></label>
+          </div>
+        <?php endif; ?>
+
+        <div class="split">
+          <label>Login User<input name="login_user" value="<?= h($form['login_user']) ?>" required></label>
+          <label>Status
+            <select name="status">
+              <?php foreach ($statuses as $status): ?>
+                <option value="<?= h($status) ?>" <?= selected((string) $form['status'], $status) ?>><?= h($statusLabels[$status]) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+        </div>
+        <label>Assigned Client
+          <input name="assigned_client" value="<?= h($form['assigned_client']) ?>" required>
+        </label>
+
+        <?php if (!$isVm): ?>
+          <div class="split">
+            <label>Monthly Cost<input name="monthly_cost" type="number" min="0" step="0.01" value="<?= h((string) $form['monthly_cost']) ?>" required></label>
+            <label>Purchase Date<input name="purchase_date" type="date" value="<?= h(date_for_input($form['purchase_date'])) ?>" required></label>
+          </div>
+          <label>Renewal / Due Date
+            <input name="renewal_date" type="date" value="<?= h(date_for_input($form['renewal_date'])) ?>" required>
+          </label>
+        <?php else: ?>
+          <input type="hidden" name="monthly_cost" value="0">
+          <input type="hidden" name="purchase_date" value="<?= h(date_for_input($form['purchase_date'])) ?>">
+          <input type="hidden" name="renewal_date" value="<?= h(date_for_input($form['renewal_date'])) ?>">
+        <?php endif; ?>
+
+        <label>Notes
+          <textarea name="notes"><?= h($form['notes']) ?></textarea>
+        </label>
+        <div class="actions">
+          <button type="submit">Save</button>
+          <a class="button secondary" href="<?= $isVm && ($form['parent_id'] ?? $parentId) ? 'index.php?page=detail&id=' . urlencode((string) ($form['parent_id'] ?? $parentId)) : 'index.php' ?>">Cancel</a>
+        </div>
+      </form>
+    </section>
+    <?php
+}
+
+function render_server_card(array $server, array $allServers, array $statusLabels, bool $vm = false): void
+{
+    $children = child_servers($allServers, (string) $server['id']);
+    $isVm = $vm || !empty($server['parent_id']);
+    ?>
+    <a class="server-card <?= $isVm ? 'vm-card' : '' ?>" href="index.php?page=detail&id=<?= urlencode($server['id']) ?>">
+      <div class="server-head">
+        <div>
+          <div class="server-name"><?= h($server['name']) ?></div>
+          <div class="muted"><?= $isVm ? 'VM / Sub server - ' : '' ?><?= h($server['ip_address']) ?></div>
+        </div>
+        <span class="chip <?= h($server['status']) ?>"><?= h($statusLabels[$server['status']] ?? $server['status']) ?></span>
+      </div>
+      <div class="muted"><?= h($isVm ? vm_spec_text($server) : $server['specification']) ?></div>
+      <div class="muted" style="margin-top:10px;">
+        <?= $isVm ? h($server['operating_system']) : h($server['assigned_client']) . ' - ' . count($children) . ' VM(s)' ?>
+      </div>
+    </a>
+    <?php
+}
+
+function default_form(?array $parent): array
+{
+    return [
+        'id' => '',
+        'parent_id' => $parent['id'] ?? null,
+        'name' => '',
+        'ip_address' => '',
+        'provider' => $parent['provider'] ?? '',
+        'location' => $parent['location'] ?? '',
+        'specification' => '',
+        'operating_system' => '',
+        'login_user' => 'root',
+        'monthly_cost' => '',
+        'purchase_date' => $parent['purchase_date'] ?? date('c'),
+        'renewal_date' => $parent['renewal_date'] ?? (new DateTimeImmutable('+30 days'))->format(DateTimeInterface::ATOM),
+        'assigned_client' => $parent['assigned_client'] ?? '',
+        'status' => 'active',
+        'notes' => '',
+        'vm_cpu_cores' => '',
+        'vm_memory_gb' => '',
+        'vm_disk_gb' => '',
+        'vm_storage' => '',
+        'vm_role' => '',
+    ];
+}
+
+function info(string $label, mixed $value): void
+{
+    echo '<div class="info"><span>' . h($label) . '</span>' . h((string) $value) . '</div>';
+}
+
+function vm_spec_text(array $server): string
+{
+    $parts = [];
+    if (!empty($server['vm_cpu_cores'])) {
+        $parts[] = $server['vm_cpu_cores'] . ' vCPU';
+    }
+    if (!empty($server['vm_memory_gb'])) {
+        $parts[] = number_format((float) $server['vm_memory_gb'], 1) . 'GB RAM';
+    }
+    if (!empty($server['vm_disk_gb'])) {
+        $parts[] = number_format((float) $server['vm_disk_gb'], 1) . 'GB disk';
+    }
+    if (!empty($server['vm_storage'])) {
+        $parts[] = 'Datastore: ' . $server['vm_storage'];
+    }
+    return $parts ? implode(', ', $parts) : ($server['specification'] ?: 'Virtual machine');
 }
 
 function date_to_iso(string $date): string
@@ -302,7 +898,6 @@ function date_to_iso(string $date): string
     if ($date === '') {
         return date('c');
     }
-
     return (new DateTimeImmutable($date))->format(DateTimeInterface::ATOM);
 }
 
@@ -311,7 +906,6 @@ function date_for_input(?string $date): string
     if (!$date) {
         return date('Y-m-d');
     }
-
     return (new DateTimeImmutable($date))->format('Y-m-d');
 }
 
@@ -326,7 +920,107 @@ function days_until(?string $date): int
     return (int) $today->diff($renewal)->format('%r%a');
 }
 
-function h(?string $value): string
+function renewal_text(?string $date): string
+{
+    $days = days_until($date);
+    return $days < 0 ? abs($days) . ' days overdue' : $days . ' days left';
+}
+
+function count_status(array $servers, string $status): int
+{
+    return count(array_filter($servers, fn(array $server): bool => (string) $server['status'] === $status));
+}
+
+function group_count(array $servers, string $field): array
+{
+    $groups = [];
+    foreach ($servers as $server) {
+        $key = trim((string) ($server[$field] ?? ''));
+        if ($key === '') {
+            continue;
+        }
+        $groups[$key] = ($groups[$key] ?? 0) + 1;
+    }
+    arsort($groups);
+    return $groups;
+}
+
+function group_sum(array $servers, string $groupField, string $sumField): array
+{
+    $groups = [];
+    foreach ($servers as $server) {
+        $key = trim((string) ($server[$groupField] ?? ''));
+        if ($key === '') {
+            continue;
+        }
+        $groups[$key] = ($groups[$key] ?? 0) + (float) ($server[$sumField] ?? 0);
+    }
+    arsort($groups);
+    return $groups;
+}
+
+function report_metric(string $label, string $value): void
+{
+    ?>
+    <div class="report-metric">
+      <strong><?= h($value) ?></strong>
+      <span><?= h($label) ?></span>
+    </div>
+    <?php
+}
+
+function report_bar(string $label, int|float $value, int|float $total): void
+{
+    $percent = $total > 0 ? max(0, min(100, ($value / $total) * 100)) : 0;
+    ?>
+    <div class="report-row">
+      <div class="report-row-head">
+        <strong><?= h($label) ?></strong>
+        <span><?= is_float($value) ? number_format($value, 2) : (string) $value ?></span>
+      </div>
+      <div class="bar"><i style="width: <?= h(number_format($percent, 2, '.', '')) ?>%;"></i></div>
+    </div>
+    <?php
+}
+
+function report_group_bars(array $groups, int $total, string $emptyText): void
+{
+    if (!$groups || $total <= 0) {
+        echo '<div class="empty">' . h($emptyText) . '</div>';
+        return;
+    }
+
+    foreach (array_slice($groups, 0, 6, true) as $label => $value) {
+        report_bar((string) $label, (int) $value, $total);
+    }
+}
+
+function report_money_bars(array $groups, float $total, string $emptyText): void
+{
+    if (!$groups || $total <= 0) {
+        echo '<div class="empty">' . h($emptyText) . '</div>';
+        return;
+    }
+
+    foreach (array_slice($groups, 0, 6, true) as $label => $value) {
+        report_bar((string) $label . ' - $' . number_format((float) $value, 0), (float) $value, $total);
+    }
+}
+
+function report_line(string $title, string $subtitle, string $trailing): void
+{
+    ?>
+    <div class="report-line">
+      <div>
+        <strong><?= h($title) ?></strong>
+        <span><?= h($subtitle) ?></span>
+      </div>
+      <b><?= h($trailing) ?></b>
+    </div>
+    <?php
+}
+
+function h(mixed $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
@@ -336,458 +1030,37 @@ function selected(string $actual, string $expected): string
     return $actual === $expected ? 'selected' : '';
 }
 
-$form = $editingServer ?? [
-    'id' => '',
-    'name' => '',
-    'ip_address' => '',
-    'provider' => '',
-    'location' => '',
-    'specification' => '',
-    'operating_system' => '',
-    'login_user' => 'root',
-    'monthly_cost' => '',
-    'purchase_date' => date('c'),
-    'renewal_date' => (new DateTimeImmutable('+30 days'))->format(DateTimeInterface::ATOM),
-    'assigned_client' => '',
-    'status' => 'active',
-    'notes' => '',
-];
-?>
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#2563eb">
-  <title>Server Manager</title>
-  <link rel="icon" type="image/png" href="assets/favicon.png">
-  <link rel="apple-touch-icon" href="assets/icon-192.png">
-  <link rel="manifest" href="site.webmanifest">
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f7f9fb;
-      --panel: #ffffff;
-      --ink: #111827;
-      --muted: #4b5563;
-      --subtle: #9ca3af;
-      --line: #e5e7eb;
-      --blue: #111827;
-      --teal: #0f766e;
-      --green-bg: #dcfce7;
-      --green: #166534;
-      --amber-bg: #fef3c7;
-      --amber: #92400e;
-      --red-bg: #fee2e2;
-      --red: #991b1b;
-      --indigo-bg: #e0e7ff;
-      --indigo: #3730a3;
-      --gray-bg: #e5e7eb;
-      --gray: #374151;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    .topbar {
-      background: var(--panel);
-      border-bottom: 1px solid var(--line);
-      position: sticky;
-      top: 0;
-      z-index: 5;
-    }
-
-    .topbar-inner {
-      align-items: center;
-      display: flex;
-      gap: 14px;
-      justify-content: space-between;
-      margin: 0 auto;
-      max-width: 1180px;
-      padding: 16px 20px;
-    }
-
-    .brand {
-      align-items: center;
-      display: flex;
-      gap: 11px;
-      min-width: 0;
-    }
-
-    .brand img {
-      border-radius: 8px;
-      height: 36px;
-      width: 36px;
-    }
-
-    h1 {
-      font-size: 20px;
-      margin: 0;
-    }
-
-    .count {
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    .topbar-actions {
-      align-items: center;
-      display: flex;
-      gap: 12px;
-    }
-
-    main {
-      display: grid;
-      gap: 18px;
-      grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
-      margin: 0 auto;
-      max-width: 1180px;
-      padding: 20px;
-    }
-
-    section {
-      min-width: 0;
-    }
-
-    h2 {
-      font-size: 16px;
-      margin: 0 0 12px;
-    }
-
-    .form-panel,
-    .table-panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
-      padding: 16px;
-    }
-
-    .form-grid {
-      display: grid;
-      gap: 12px;
-    }
-
-    label {
-      color: var(--muted);
-      display: grid;
-      font-size: 12px;
-      font-weight: 800;
-      gap: 5px;
-    }
-
-    input,
-    select,
-    textarea {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      color: var(--ink);
-      font: inherit;
-      min-height: 42px;
-      padding: 10px 11px;
-      width: 100%;
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      border-color: var(--teal);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-      outline: 0;
-    }
-
-    textarea {
-      min-height: 92px;
-      resize: vertical;
-    }
-
-    .split {
-      display: grid;
-      gap: 10px;
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    button,
-    .button {
-      align-items: center;
-      background: var(--blue);
-      border: 0;
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-      display: inline-flex;
-      font: inherit;
-      font-weight: 800;
-      justify-content: center;
-      min-height: 42px;
-      padding: 0 14px;
-      text-decoration: none;
-    }
-
-    .button.secondary {
-      background: #f3f4f6;
-      color: #374151;
-    }
-
-    .button.danger,
-    button.danger {
-      background: #dc2626;
-    }
-
-    .table-wrap {
-      overflow-x: auto;
-    }
-
-    table {
-      border-collapse: collapse;
-      min-width: 820px;
-      width: 100%;
-    }
-
-    th,
-    td {
-      border-bottom: 1px solid var(--line);
-      padding: 12px 10px;
-      text-align: left;
-      vertical-align: top;
-    }
-
-    th {
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-    }
-
-    tbody tr:hover {
-      background: #f9fafb;
-    }
-
-    td strong {
-      display: block;
-      margin-bottom: 3px;
-    }
-
-    .muted {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .chip {
-      border-radius: 999px;
-      display: inline-flex;
-      font-size: 12px;
-      font-weight: 800;
-      padding: 5px 9px;
-      white-space: nowrap;
-    }
-
-    .active { background: var(--green-bg); color: var(--green); }
-    .dueSoon { background: var(--amber-bg); color: var(--amber); }
-    .overdue { background: var(--red-bg); color: var(--red); }
-    .suspended { background: var(--indigo-bg); color: var(--indigo); }
-    .retired { background: var(--gray-bg); color: var(--gray); }
-
-    .row-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .inline-form {
-      display: inline;
-    }
-
-    .empty,
-    .error {
-      border: 1px dashed var(--line);
-      border-radius: 8px;
-      color: var(--muted);
-      padding: 22px;
-      text-align: center;
-    }
-
-    .error {
-      border-color: #fecaca;
-      color: var(--red);
-      margin: 20px auto 0;
-      max-width: 1180px;
-    }
-
-    @media (max-width: 860px) {
-      main {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
-</head>
-<body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="brand">
-        <img src="assets/icon-192.png" alt="">
-        <h1>Server Manager</h1>
-      </div>
-      <div class="topbar-actions">
-        <span class="count"><?= count($servers) ?> servers</span>
-        <a class="button secondary" href="index.php?logout=1">Logout</a>
-      </div>
-    </div>
-  </header>
-
-  <?php if (isset($error)): ?>
-    <div class="error"><?= h($error) ?></div>
-  <?php endif; ?>
-
-  <main>
-    <section class="form-panel">
-      <h2><?= $editingServer ? 'Edit Server' : 'Add Server' ?></h2>
-      <form method="post" class="form-grid">
-        <input type="hidden" name="action" value="save">
-        <input type="hidden" name="id" value="<?= h($form['id']) ?>">
-
-        <label>Server Name
-          <input name="name" value="<?= h($form['name']) ?>" required>
-        </label>
-
-        <label>IP Address
-          <input name="ip_address" value="<?= h($form['ip_address']) ?>" required>
-        </label>
-
-        <div class="split">
-          <label>Provider
-            <input name="provider" value="<?= h($form['provider']) ?>" required>
-          </label>
-          <label>Location
-            <input name="location" value="<?= h($form['location']) ?>" required>
-          </label>
-        </div>
-
-        <label>Specification
-          <textarea name="specification" required><?= h($form['specification']) ?></textarea>
-        </label>
-
-        <div class="split">
-          <label>Operating System
-            <input name="operating_system" value="<?= h($form['operating_system']) ?>" required>
-          </label>
-          <label>Login User
-            <input name="login_user" value="<?= h($form['login_user']) ?>" required>
-          </label>
-        </div>
-
-        <div class="split">
-          <label>Monthly Cost
-            <input name="monthly_cost" type="number" min="0" step="0.01" value="<?= h((string) $form['monthly_cost']) ?>" required>
-          </label>
-          <label>Status
-            <select name="status">
-              <?php foreach ($statuses as $status): ?>
-                <option value="<?= h($status) ?>" <?= selected((string) $form['status'], $status) ?>>
-                  <?= h($statusLabels[$status]) ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </label>
-        </div>
-
-        <label>Assigned Client
-          <input name="assigned_client" value="<?= h($form['assigned_client']) ?>" required>
-        </label>
-
-        <div class="split">
-          <label>Purchase Date
-            <input name="purchase_date" type="date" value="<?= h(date_for_input($form['purchase_date'])) ?>" required>
-          </label>
-          <label>Renewal Date
-            <input name="renewal_date" type="date" value="<?= h(date_for_input($form['renewal_date'])) ?>" required>
-          </label>
-        </div>
-
-        <label>Notes
-          <textarea name="notes"><?= h($form['notes']) ?></textarea>
-        </label>
-
-        <div class="actions">
-          <button type="submit">Save</button>
-          <?php if ($editingServer): ?>
-            <a class="button secondary" href="index.php">Cancel</a>
-          <?php endif; ?>
-        </div>
+function render_login(): void
+{
+    $error = $_SESSION['server_manager_login_error'] ?? '';
+    unset($_SESSION['server_manager_login_error']);
+    ?>
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Server Manager Login</title>
+      <style>
+        body { align-items: center; background: linear-gradient(135deg, #e0f2fe, #f5f3ff, #fffbeb); color: #111827; display: flex; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; justify-content: center; margin: 0; min-height: 100vh; padding: 20px; }
+        form { background: white; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 12px 30px rgba(17,24,39,.1); max-width: 390px; padding: 20px; width: 100%; }
+        h1 { align-items: center; display: flex; font-size: 22px; gap: 10px; margin: 0 0 16px; }
+        h1 img { border-radius: 8px; height: 34px; width: 34px; }
+        label { color: #4b5563; display: grid; font-size: 12px; font-weight: 800; gap: 6px; }
+        input { border: 1px solid #e5e7eb; border-radius: 8px; font: inherit; min-height: 42px; padding: 10px 11px; }
+        button { background: #111827; border: 0; border-radius: 8px; color: white; cursor: pointer; font: inherit; font-weight: 800; margin-top: 14px; min-height: 42px; width: 100%; }
+        .error { color: #991b1b; font-size: 14px; margin-bottom: 12px; }
+      </style>
+    </head>
+    <body>
+      <form method="post">
+        <h1><img src="assets/icon-192.png" alt=""> Server Manager</h1>
+        <?php if ($error): ?><div class="error"><?= h($error) ?></div><?php endif; ?>
+        <input type="hidden" name="action" value="login">
+        <label>Password <input name="password" type="password" required autofocus></label>
+        <button type="submit">Sign In</button>
       </form>
-    </section>
-
-    <section class="table-panel">
-      <h2>Servers</h2>
-      <?php if (!$servers): ?>
-        <div class="empty">No servers saved yet.</div>
-      <?php else: ?>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Server</th>
-                <th>Client</th>
-                <th>Provider</th>
-                <th>Status</th>
-                <th>Renewal</th>
-                <th>Monthly</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($servers as $server): ?>
-                <?php $days = days_until($server['renewal_date']); ?>
-                <tr>
-                  <td>
-                    <strong><?= h($server['name']) ?></strong>
-                    <span class="muted"><?= h($server['ip_address']) ?></span>
-                  </td>
-                  <td><?= h($server['assigned_client']) ?></td>
-                  <td>
-                    <?= h($server['provider']) ?><br>
-                    <span class="muted"><?= h($server['location']) ?></span>
-                  </td>
-                  <td>
-                    <span class="chip <?= h($server['status']) ?>">
-                      <?= h($statusLabels[$server['status']] ?? $server['status']) ?>
-                    </span>
-                  </td>
-                  <td>
-                    <?= h(date_for_input($server['renewal_date'])) ?><br>
-                    <span class="muted"><?= $days < 0 ? abs($days) . ' days overdue' : $days . ' days left' ?></span>
-                  </td>
-                  <td>$<?= number_format((float) $server['monthly_cost'], 2) ?></td>
-                  <td>
-                    <div class="row-actions">
-                      <a class="button secondary" href="index.php?edit=<?= urlencode($server['id']) ?>">Edit</a>
-                      <form method="post" class="inline-form" onsubmit="return confirm('Delete this server?');">
-                        <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="id" value="<?= h($server['id']) ?>">
-                        <button class="danger" type="submit">Delete</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        </div>
-      <?php endif; ?>
-    </section>
-  </main>
-</body>
-</html>
+    </body>
+    </html>
+    <?php
+}

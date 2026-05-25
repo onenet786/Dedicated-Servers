@@ -26,6 +26,14 @@ class ServerStore extends ChangeNotifier {
 
   List<ManagedServer> get servers => List.unmodifiable(_servers);
 
+  List<ManagedServer> get rootServers {
+    return _servers.where((server) => server.parentId == null).toList();
+  }
+
+  List<ManagedServer> childrenOf(String parentId) {
+    return _servers.where((server) => server.parentId == parentId).toList();
+  }
+
   Future<void> load() async {
     await _deletePreloadedServers();
     final savedServers = await _loadServers();
@@ -40,7 +48,7 @@ class ServerStore extends ChangeNotifier {
   List<ManagedServer> search(String query) {
     final normalizedQuery = query.trim().toLowerCase();
     if (normalizedQuery.isEmpty) {
-      return servers;
+      return rootServers;
     }
 
     return _servers.where((server) {
@@ -89,23 +97,33 @@ class ServerStore extends ChangeNotifier {
   }
 
   Future<void> delete(String id) async {
+    final removedIds = _servers
+        .where((server) => server.id == id || server.parentId == id)
+        .map((server) => server.id)
+        .toList();
     await _deleteRemote(id);
     await _database.deleteServer(id);
-    _servers.removeWhere((server) => server.id == id);
-    await _notificationService.cancelServerReminder(id);
+    _servers.removeWhere((server) => server.id == id || server.parentId == id);
+    for (final removedId in removedIds) {
+      await _notificationService.cancelServerReminder(removedId);
+    }
     notifyListeners();
   }
 
   double get monthlySpend {
-    return _servers.fold(0, (total, server) => total + server.monthlyCost);
+    return rootServers.fold(0, (total, server) => total + server.monthlyCost);
   }
 
   int get urgentRenewals {
-    return _servers.where((server) => server.isRenewalUrgent).length;
+    return rootServers.where((server) => server.isRenewalUrgent).length;
   }
 
   int get clientCount {
     return _servers.map((server) => server.assignedClient).toSet().length;
+  }
+
+  int get vmCount {
+    return _servers.where((server) => server.isVirtualMachine).length;
   }
 
   Future<List<ManagedServer>> _loadServers() async {

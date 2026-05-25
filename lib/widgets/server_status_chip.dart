@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/server.dart';
+import '../theme/app_theme.dart';
 
 class ServerStatusChip extends StatelessWidget {
   const ServerStatusChip({super.key, required this.status});
@@ -15,6 +16,7 @@ class ServerStatusChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background,
         borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colors.foreground.withValues(alpha: 0.18)),
       ),
       child: Text(
         status.label,
@@ -31,14 +33,14 @@ class ServerStatusChip extends StatelessWidget {
 ({Color background, Color foreground}) _colorsForStatus(ServerStatus status) {
   switch (status) {
     case ServerStatus.active:
-      return (background: const Color(0xFFDCFCE7), foreground: const Color(0xFF166534));
+      return (background: AppColors.successSoft, foreground: AppColors.success);
     case ServerStatus.dueSoon:
-      return (background: const Color(0xFFFEF3C7), foreground: const Color(0xFF92400E));
+      return (background: AppColors.warningSoft, foreground: AppColors.warning);
     case ServerStatus.overdue:
-      return (background: const Color(0xFFFEE2E2), foreground: const Color(0xFF991B1B));
+      return (background: AppColors.dangerSoft, foreground: AppColors.danger);
     case ServerStatus.suspended:
-      return (background: const Color(0xFFE0E7FF), foreground: const Color(0xFF3730A3));
+      return (background: AppColors.violetSoft, foreground: AppColors.violet);
     case ServerStatus.retired:
-      return (background: const Color(0xFFE5E7EB), foreground: const Color(0xFF374151));
+      return (background: AppColors.neutralSoft, foreground: AppColors.neutral);
   }
 }

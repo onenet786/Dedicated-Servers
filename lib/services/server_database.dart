@@ -10,7 +10,7 @@ class ServerDatabase {
   static final ServerDatabase instance = ServerDatabase._();
 
   static const _databaseName = 'server_manager.db';
-  static const _databaseVersion = 1;
+  static const _databaseVersion = 3;
   static const serversTable = 'servers';
 
   Database? _database;
@@ -26,6 +26,7 @@ class ServerDatabase {
       path.join(databasePath, _databaseName),
       version: _databaseVersion,
       onCreate: _createDatabase,
+      onUpgrade: _upgradeDatabase,
     );
     _database = database;
     return database;
@@ -35,6 +36,7 @@ class ServerDatabase {
     await database.execute('''
       CREATE TABLE $serversTable (
         id TEXT PRIMARY KEY,
+        parent_id TEXT,
         name TEXT NOT NULL,
         ip_address TEXT NOT NULL,
         provider TEXT NOT NULL,
@@ -47,7 +49,12 @@ class ServerDatabase {
         renewal_date TEXT NOT NULL,
         assigned_client TEXT NOT NULL,
         status TEXT NOT NULL,
-        notes TEXT NOT NULL
+        notes TEXT NOT NULL,
+        vm_cpu_cores INTEGER,
+        vm_memory_gb REAL,
+        vm_disk_gb REAL,
+        vm_storage TEXT,
+        vm_role TEXT
       )
     ''');
 
@@ -55,8 +62,31 @@ class ServerDatabase {
       'CREATE INDEX idx_servers_renewal_date ON $serversTable (renewal_date)',
     );
     await database.execute(
+      'CREATE INDEX idx_servers_parent_id ON $serversTable (parent_id)',
+    );
+    await database.execute(
       'CREATE INDEX idx_servers_assigned_client ON $serversTable (assigned_client)',
     );
+  }
+
+  Future<void> _upgradeDatabase(
+    Database database,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion < 2) {
+      await database.execute('ALTER TABLE $serversTable ADD COLUMN parent_id TEXT');
+      await database.execute(
+        'CREATE INDEX IF NOT EXISTS idx_servers_parent_id ON $serversTable (parent_id)',
+      );
+    }
+    if (oldVersion < 3) {
+      await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_cpu_cores INTEGER');
+      await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_memory_gb REAL');
+      await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_disk_gb REAL');
+      await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_storage TEXT');
+      await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_role TEXT');
+    }
   }
 
   Future<List<ManagedServer>> fetchServers() async {
@@ -115,6 +145,19 @@ class ServerDatabase {
   }
 
   Future<void> deleteServer(String id) async {
+    if (kIsWeb) {
+      return;
+    }
+
+    final db = await database;
+    await db.delete(
+      serversTable,
+      where: 'id = ? OR parent_id = ?',
+      whereArgs: [id, id],
+    );
+  }
+
+  Future<void> deleteServerOnly(String id) async {
     if (kIsWeb) {
       return;
     }
