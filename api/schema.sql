@@ -26,3 +26,16 @@ CREATE TABLE servers (
 CREATE INDEX idx_servers_parent_id ON servers (parent_id);
 CREATE INDEX idx_servers_renewal_date ON servers (renewal_date);
 CREATE INDEX idx_servers_assigned_client ON servers (assigned_client);
+
+CREATE TABLE billing_events (
+  id VARCHAR(64) PRIMARY KEY,
+  server_id VARCHAR(64) NOT NULL,
+  event_type VARCHAR(40) NOT NULL,
+  event_date VARCHAR(40) NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  message TEXT NOT NULL,
+  next_due_date VARCHAR(40) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_billing_events_server_id (server_id),
+  INDEX idx_billing_events_event_date (event_date)
+);

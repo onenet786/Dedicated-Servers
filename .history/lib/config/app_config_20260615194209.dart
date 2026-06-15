@@ -15,5 +15,6 @@ class AppConfig {
 
   static bool get hasRemoteApi => remoteApiBaseUrl.trim().isNotEmpty;
 
-  static bool get hasWhatsAppApi => whatsappWebhookUrl.trim().isNotEmpty;
+  static bool get hasWhatsAppApi =>
+      whatsappWebhookUrl.trim().isNotEmpty;
 }

@@ -30,25 +30,17 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-    widget.store.addListener(_refresh);
   }
 
   @override
   void dispose() {
-    widget.store.removeListener(_refresh);
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _refresh() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final server = widget.store.byId(widget.serverId) ?? widget.initialServer;
+    final server = widget.initialServer ?? widget.store.byId(widget.serverId);
 
     if (server == null) {
       return Scaffold(
@@ -225,8 +217,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                       'Renewal Date', dateFormat.format(server.renewalDate)),
                 ],
               ),
-              _BillingHistoryCard(history: server.billingHistory),
-              _PaymentReceivedCard(store: widget.store, server: server),
               _WhatsAppCard(store: widget.store, server: server),
               _SubServerSection(
                 store: widget.store,
@@ -281,255 +271,6 @@ String _formatNumber(double value) {
       : value.toStringAsFixed(1);
 }
 
-class _BillingHistoryCard extends StatelessWidget {
-  const _BillingHistoryCard({required this.history});
-
-  final List<BillingEvent> history;
-
-  @override
-  Widget build(BuildContext context) {
-    final dateFormat = DateFormat('MMM d, yyyy');
-    final visibleHistory = history.take(6).toList();
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.receipt_long_outlined, color: AppColors.success),
-                SizedBox(width: 10),
-                Text(
-                  'Invoice & Payment History',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (visibleHistory.isEmpty)
-              const Text(
-                'No invoice or payment history yet.',
-                style: TextStyle(color: AppColors.textSecondary),
-              )
-            else
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                    color: Colors.white,
-                  ),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      headingRowColor: WidgetStateProperty.all(
-                        const Color(0xFFF8FAFC),
-                      ),
-                      columnSpacing: 22,
-                      horizontalMargin: 14,
-                      dataRowMinHeight: 54,
-                      dataRowMaxHeight: 72,
-                      columns: const [
-                        DataColumn(label: Text('Date')),
-                        DataColumn(label: Text('Record')),
-                        DataColumn(label: Text('Message')),
-                        DataColumn(label: Text('Next Due')),
-                        DataColumn(
-                          numeric: true,
-                          label: Text('Amount'),
-                        ),
-                      ],
-                      rows: visibleHistory.map((event) {
-                        final isPayment = event.type == 'payment_received';
-                        return DataRow(
-                          cells: [
-                            DataCell(Text(dateFormat.format(event.date))),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 9,
-                                    height: 9,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: isPayment
-                                          ? AppColors.success
-                                          : AppColors.info,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    event.label,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            DataCell(
-                              SizedBox(
-                                width: 180,
-                                child: Text(
-                                  event.message.isEmpty ? '-' : event.message,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                event.nextDueDate == null
-                                    ? '-'
-                                    : dateFormat.format(event.nextDueDate!),
-                                style: TextStyle(
-                                  color: event.nextDueDate == null
-                                      ? AppColors.textSecondary
-                                      : AppColors.success,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                'PKR ${event.amount.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentReceivedCard extends StatefulWidget {
-  const _PaymentReceivedCard({required this.store, required this.server});
-
-  final ServerStore store;
-  final ManagedServer server;
-
-  @override
-  State<_PaymentReceivedCard> createState() => _PaymentReceivedCardState();
-}
-
-class _PaymentReceivedCardState extends State<_PaymentReceivedCard> {
-  bool _saving = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPhone = widget.server.clientPhone.trim().isNotEmpty;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.payments_outlined, color: AppColors.success),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Payment received',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _saving || !hasPhone ? null : _confirmAndSave,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.check_circle_outline),
-                label: Text(_saving ? 'Saving' : 'Mark Paid'),
-              ),
-            ),
-            if (!hasPhone) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Add client WhatsApp phone before marking payment received.',
-                style: TextStyle(color: AppColors.danger),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _confirmAndSave() async {
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mark payment received?'),
-        content: Text(
-          'This will advance the due date for ${widget.server.name} by one month and send a thank-you WhatsApp message.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldSave != true || !mounted) {
-      return;
-    }
-
-    setState(() => _saving = true);
-    try {
-      final updated = await widget.store.markPaymentReceived(widget.server);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Payment marked received. Next due date: ${DateFormat('MMM d, yyyy').format(updated.renewalDate)}.',
-            ),
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
-  }
-}
-
 class _WhatsAppCard extends StatefulWidget {
   const _WhatsAppCard({required this.store, required this.server});
 
@@ -551,24 +292,18 @@ class _WhatsAppCardState extends State<_WhatsAppCard> {
       margin: const EdgeInsets.only(bottom: 14),
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            const Row(
-              children: [
-                Icon(Icons.chat_outlined, color: AppColors.success),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Send WhatsApp message',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
+            const Icon(Icons.chat_outlined, color: AppColors.success),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Send WhatsApp message',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
             ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
+            Flexible(
+              fit: FlexFit.loose,
               child: FilledButton.icon(
                 onPressed: _sending || !hasPhone ? null : _send,
                 icon: _sending
@@ -581,13 +316,6 @@ class _WhatsAppCardState extends State<_WhatsAppCard> {
                 label: Text(_sending ? 'Sending' : 'Send'),
               ),
             ),
-            if (!hasPhone) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Add client WhatsApp phone before sending a message.',
-                style: TextStyle(color: AppColors.danger),
-              ),
-            ],
           ],
         ),
       ),

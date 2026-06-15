@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum ServerStatus { active, dueSoon, overdue, suspended, retired }
 
 class ManagedServer {
@@ -18,6 +20,7 @@ class ManagedServer {
     required this.clientPhone,
     required this.status,
     required this.notes,
+    this.billingHistory = const [],
     this.vmCpuCores,
     this.vmMemoryGb,
     this.vmDiskGb,
@@ -41,6 +44,7 @@ class ManagedServer {
   final String clientPhone;
   final ServerStatus status;
   final String notes;
+  final List<BillingEvent> billingHistory;
   final int? vmCpuCores;
   final double? vmMemoryGb;
   final double? vmDiskGb;
@@ -67,6 +71,7 @@ class ManagedServer {
       clientPhone: (map['client_phone'] ?? '').toString(),
       status: ServerStatus.values.byName(map['status'] as String),
       notes: map['notes'] as String,
+      billingHistory: BillingEvent.listFromValue(map['billing_history']),
       vmCpuCores: _readNullableInt(map['vm_cpu_cores']),
       vmMemoryGb: _readNullableDouble(map['vm_memory_gb']),
       vmDiskGb: _readNullableDouble(map['vm_disk_gb']),
@@ -115,6 +120,7 @@ class ManagedServer {
     String? clientPhone,
     ServerStatus? status,
     String? notes,
+    List<BillingEvent>? billingHistory,
     int? vmCpuCores,
     double? vmMemoryGb,
     double? vmDiskGb,
@@ -138,6 +144,7 @@ class ManagedServer {
       clientPhone: clientPhone ?? this.clientPhone,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      billingHistory: billingHistory ?? this.billingHistory,
       vmCpuCores: vmCpuCores ?? this.vmCpuCores,
       vmMemoryGb: vmMemoryGb ?? this.vmMemoryGb,
       vmDiskGb: vmDiskGb ?? this.vmDiskGb,
@@ -164,12 +171,84 @@ class ManagedServer {
       'client_phone': clientPhone,
       'status': status.name,
       'notes': notes,
+      'billing_history': jsonEncode(
+        billingHistory.map((event) => event.toMap()).toList(),
+      ),
       'vm_cpu_cores': vmCpuCores,
       'vm_memory_gb': vmMemoryGb,
       'vm_disk_gb': vmDiskGb,
       'vm_storage': vmStorage,
       'vm_role': vmRole,
     };
+  }
+}
+
+class BillingEvent {
+  const BillingEvent({
+    required this.type,
+    required this.date,
+    required this.amount,
+    required this.message,
+    this.nextDueDate,
+  });
+
+  final String type;
+  final DateTime date;
+  final double amount;
+  final String message;
+  final DateTime? nextDueDate;
+
+  String get label {
+    switch (type) {
+      case 'payment_received':
+        return 'Payment received';
+      case 'auto_invoice_sent':
+        return 'Auto invoice sent';
+      case 'auto_reminder_sent':
+        return 'Daily reminder sent';
+      default:
+        return 'Invoice sent';
+    }
+  }
+
+  Map<String, Object?> toMap() {
+    return {
+      'type': type,
+      'date': date.toIso8601String(),
+      'amount': amount,
+      'message': message,
+      'next_due_date': nextDueDate?.toIso8601String(),
+    };
+  }
+
+  factory BillingEvent.fromMap(Map<String, Object?> map) {
+    return BillingEvent(
+      type: (map['type'] ?? 'invoice_sent').toString(),
+      date: DateTime.tryParse((map['date'] ?? '').toString()) ?? DateTime.now(),
+      amount: _readDouble(map['amount'] ?? 0),
+      message: (map['message'] ?? '').toString(),
+      nextDueDate: _readNullableDate(map['next_due_date']),
+    );
+  }
+
+  static List<BillingEvent> listFromValue(Object? value) {
+    if (value == null || value.toString().trim().isEmpty) {
+      return const [];
+    }
+    try {
+      final decoded = value is String ? jsonDecode(value) : value;
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((item) => BillingEvent.fromMap(
+                  item.map((key, value) => MapEntry(key.toString(), value)),
+                ))
+            .toList();
+      }
+    } catch (_) {
+      return const [];
+    }
+    return const [];
   }
 }
 
@@ -208,6 +287,13 @@ double? _readNullableDouble(Object? value) {
     return value.toDouble();
   }
   return double.tryParse(value.toString());
+}
+
+DateTime? _readNullableDate(Object? value) {
+  if (value == null || value.toString().isEmpty) {
+    return null;
+  }
+  return DateTime.tryParse(value.toString());
 }
 
 extension ServerStatusLabel on ServerStatus {

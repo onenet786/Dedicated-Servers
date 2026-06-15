@@ -9,11 +9,12 @@ class AppConfig {
   static const remoteApiKey = 'Admin786';
 
   static const whatsappWebhookUrl =
-      'http://ledger.flaura.pk:5678/webhook/whatsapp-invoice';
+      'http://:5678/webhook/whatsapp-invoice';
 
   static const whatsappSender = 'reports4';
 
   static bool get hasRemoteApi => remoteApiBaseUrl.trim().isNotEmpty;
 
-  static bool get hasWhatsAppApi => whatsappWebhookUrl.trim().isNotEmpty;
+  static bool get hasWhatsAppApi =>
+      whatsappWebhookUrl.trim().isNotEmpty;
 }

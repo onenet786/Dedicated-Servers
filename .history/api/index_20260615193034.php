@@ -26,17 +26,10 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-      handle_form_submit($statuses);
+        handle_form_submit($statuses);
     }
 
-    try {
-      $servers = fetch_servers();
-    } catch (Throwable $e) {
-      http_response_code(500);
-      // Output a minimal error page to aid debugging when DB connection fails.
-      echo '<!doctype html><html><head><meta charset="utf-8"><title>Server Manager - Error</title></head><body style="font-family:system-ui,Segoe UI,Arial;color:#111827;padding:20px;"><h1>Internal Server Error</h1><pre style="white-space:pre-wrap;color:#b91c1c;">' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . '</pre><p>Check database connection and error logs.</p></body></html>';
-      exit;
-    }
+    $servers = fetch_servers();
     $page = (string) ($_GET['page'] ?? 'list');
 
     render_layout(function () use ($page, $servers, $statuses, $statusLabels): void {
@@ -66,23 +59,23 @@ try {
 
 function handle_auth(): void
 {
-  if (($_POST['action'] ?? '') === 'login') {
-    $password = (string) ($_POST['password'] ?? '');
-    if (hash_equals(WEB_PASSWORD, $password)) {
-      $_SESSION['server_manager_logged_in'] = true;
-    } else {
-      $_SESSION['server_manager_login_error'] = 'Invalid password';
+    if (($_POST['action'] ?? '') === 'login') {
+        $password = (string) ($_POST['password'] ?? '');
+        if (hash_equals(WEB_PASSWORD, $password)) {
+            $_SESSION['server_manager_logged_in'] = true;
+        } else {
+            $_SESSION['server_manager_login_error'] = 'Invalid password';
+        }
+        header('Location: index.php');
+        exit;
     }
-    header('Location: index.php');
-    exit;
-  }
 
-  if (($_GET['logout'] ?? '') === '1') {
-    $_SESSION = [];
-    session_destroy();
-    header('Location: index.php');
-    exit;
-  }
+    if (($_GET['logout'] ?? '') === '1') {
+        $_SESSION = [];
+        session_destroy();
+        header('Location: index.php');
+        exit;
+    }
 }
 
 function is_logged_in(): bool
@@ -92,7 +85,7 @@ function is_logged_in(): bool
 
 function handle_form_submit(array $statuses): never
 {
-    $action = (string) ($_POST['action'] ?? '');
+    $action = $_POST['action'] ?? '';
     $id = (string) ($_POST['id'] ?? '');
 
     if ($action === 'delete') {
@@ -108,44 +101,7 @@ function handle_form_submit(array $statuses): never
         } else {
             try {
                 send_whatsapp_message($server);
-                add_billing_event((string) $server['id'], [
-                    'type' => 'invoice_sent',
-                    'date' => (new DateTimeImmutable())->format(DateTimeInterface::ATOM),
-                    'amount' => (float) ($server['monthly_cost'] ?? 0),
-                    'message' => 'Invoice sent for ' . date_for_input((string) ($server['renewal_date'] ?? '')),
-                ]);
                 set_flash('success', 'WhatsApp message sent.');
-            } catch (Throwable $exception) {
-                set_flash('error', $exception->getMessage());
-            }
-        }
-        header('Location: index.php?page=detail&id=' . urlencode($id));
-        exit;
-    }
-
-    if ($action === 'payment_received') {
-        $server = find_server(fetch_servers(), $id);
-        if (!$server) {
-            set_flash('error', 'Server not found.');
-        } elseif (!empty($server['parent_id'])) {
-            set_flash('error', 'Payment received can only be marked on dedicated servers.');
-        } else {
-            try {
-                $currentRenewal = new DateTimeImmutable((string) ($server['renewal_date'] ?? 'now'));
-                $nextDueDate = next_monthly_due_date($currentRenewal);
-                $updatedServer = $server;
-                $updatedServer['renewal_date'] = $nextDueDate->format(DateTimeInterface::ATOM);
-                $updatedServer['status'] = 'active';
-                add_billing_event((string) $server['id'], [
-                    'type' => 'payment_received',
-                    'date' => (new DateTimeImmutable())->format(DateTimeInterface::ATOM),
-                    'amount' => (float) ($server['monthly_cost'] ?? 0),
-                    'message' => 'Payment received',
-                    'next_due_date' => $nextDueDate->format(DateTimeInterface::ATOM),
-                ]);
-                save_server($updatedServer);
-                send_payment_received_message($server, $nextDueDate);
-                set_flash('success', 'Payment marked received. Thank-you WhatsApp sent. Next due date: ' . $nextDueDate->format('Y-m-d') . '.');
             } catch (Throwable $exception) {
                 set_flash('error', $exception->getMessage());
             }
@@ -167,6 +123,7 @@ function handle_form_submit(array $statuses): never
 
     $savedId = trim($id) ?: bin2hex(random_bytes(16));
     $isVm = $parentId !== null;
+
     $server = [
         'id' => $savedId,
         'parent_id' => $parentId,
@@ -294,10 +251,8 @@ function delete_server(string $id): void
         return;
     }
 
-    db()->prepare('DELETE FROM billing_events WHERE server_id = :id OR server_id IN (SELECT id FROM servers WHERE parent_id = :id)')
-        ->execute([':id' => $id]);
-    db()->prepare('DELETE FROM servers WHERE id = :id OR parent_id = :id')
-        ->execute([':id' => $id]);
+    $statement = db()->prepare('DELETE FROM servers WHERE id = :id OR parent_id = :id');
+    $statement->execute([':id' => $id]);
 }
 
 function render_layout(callable $content, array $servers): void
@@ -411,17 +366,6 @@ function render_layout(callable $content, array $servers): void
         .report-line strong { display: block; }
         .report-line span { color: var(--muted); font-size: 13px; }
         .report-line b { color: var(--teal); white-space: nowrap; }
-        .billing-table-wrap { border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; background: white; }
-        .billing-table { border-collapse: collapse; min-width: 760px; width: 100%; }
-        .billing-table th { background: #f8fafc; color: var(--muted); font-size: 11px; letter-spacing: .04em; padding: 11px 12px; text-align: left; text-transform: uppercase; white-space: nowrap; }
-        .billing-table td { border-top: 1px solid var(--line); padding: 12px; vertical-align: top; }
-        .billing-table tbody tr:hover { background: #f8fafc; }
-        .billing-type { align-items: center; display: inline-flex; gap: 7px; font-weight: 850; white-space: nowrap; }
-        .billing-dot { border-radius: 999px; display: inline-block; height: 9px; width: 9px; }
-        .billing-dot.invoice { background: var(--blue); }
-        .billing-dot.payment { background: var(--green); }
-        .billing-amount { font-weight: 850; text-align: right; white-space: nowrap; }
-        .billing-next { color: var(--green); font-weight: 800; white-space: nowrap; }
         @media (max-width: 700px) {
           .metrics, .split { grid-template-columns: 1fr; }
           .topbar-inner { align-items: flex-start; flex-direction: column; }
@@ -743,11 +687,6 @@ function render_detail_view(array $servers, array $statusLabels): void
           <button class="button teal" type="submit">Send WhatsApp</button>
         </form>
         <?php if (!$isVm): ?>
-          <form method="post" onsubmit="return confirm('Mark payment received, advance due date by one month, and send thank-you WhatsApp?');">
-            <input type="hidden" name="action" value="payment_received">
-            <input type="hidden" name="id" value="<?= h($server['id']) ?>">
-            <button class="button teal" type="submit">Payment Received</button>
-          </form>
           <a class="button teal" href="index.php?page=form&parent_id=<?= urlencode($server['id']) ?>">Add VM</a>
         <?php endif; ?>
         <form method="post" onsubmit="return confirm('Delete this record?');">
@@ -794,7 +733,6 @@ function render_detail_view(array $servers, array $statusLabels): void
           <?php info('Purchase Date', date_for_input($server['purchase_date'])); ?>
           <?php info('Renewal Date', date_for_input($server['renewal_date']) . ' (' . renewal_text($server['renewal_date']) . ')'); ?>
         </div>
-        <?php render_billing_history($server); ?>
       </section>
       <section class="panel">
         <div class="panel-title">
@@ -974,46 +912,6 @@ function info(string $label, mixed $value): void
     echo '<div class="info"><span>' . h($label) . '</span>' . h((string) $value) . '</div>';
 }
 
-function render_billing_history(array $server): void
-{
-    $history = array_slice(billing_history($server), 0, 6);
-    echo '<div style="margin-top:18px">';
-    echo '<h3 style="margin:0 0 10px;font-size:16px">Invoice & Payment History</h3>';
-    if (!$history) {
-        echo '<div class="empty">No invoice or payment history yet.</div></div>';
-        return;
-    }
-
-    echo '<div class="billing-table-wrap">';
-    echo '<table class="billing-table">';
-    echo '<thead><tr>';
-    echo '<th>Date</th><th>Record</th><th>Message</th><th>Next Due</th><th style="text-align:right">Amount</th>';
-    echo '</tr></thead><tbody>';
-    foreach ($history as $event) {
-        $type = (string) ($event['type'] ?? 'invoice_sent');
-        $label = match ($type) {
-            'payment_received' => 'Payment received',
-            'auto_invoice_sent' => 'Auto invoice sent',
-            'auto_reminder_sent' => 'Daily reminder sent',
-            default => 'Invoice sent',
-        };
-        $dotClass = $type === 'payment_received' ? 'payment' : 'invoice';
-        $date = date_for_input((string) ($event['date'] ?? 'now'));
-        $amount = 'PKR ' . number_format((float) ($event['amount'] ?? 0), 2);
-        $message = (string) ($event['message'] ?? '');
-        $nextDue = !empty($event['next_due_date']) ? date_for_input((string) $event['next_due_date']) : '';
-
-        echo '<tr>';
-        echo '<td><strong>' . h($date) . '</strong></td>';
-        echo '<td><span class="billing-type"><i class="billing-dot ' . h($dotClass) . '"></i>' . h($label) . '</span></td>';
-        echo '<td>' . h($message !== '' ? $message : '-') . '</td>';
-        echo '<td>' . ($nextDue !== '' ? '<span class="billing-next">' . h($nextDue) . '</span>' : '<span class="muted">-</span>') . '</td>';
-        echo '<td class="billing-amount">' . h($amount) . '</td>';
-        echo '</tr>';
-    }
-    echo '</tbody></table></div></div>';
-}
-
 function vm_spec_text(array $server): string
 {
     $parts = [];
@@ -1046,65 +944,6 @@ function date_for_input(?string $date): string
         return date('Y-m-d');
     }
     return (new DateTimeImmutable($date))->format('Y-m-d');
-}
-
-function next_monthly_due_date(DateTimeImmutable $currentDueDate): DateTimeImmutable
-{
-    $year = (int) $currentDueDate->format('Y');
-    $month = (int) $currentDueDate->format('n') + 1;
-    if ($month > 12) {
-        $month = 1;
-        $year++;
-    }
-
-    $lastDay = (int) (new DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month)))
-        ->modify('last day of this month')
-        ->format('j');
-    $day = min((int) $currentDueDate->format('j'), $lastDay);
-
-    return (new DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $day)))
-        ->setTime(0, 0);
-}
-
-function billing_history(array $server): array
-{
-    $statement = db()->prepare('
-        SELECT event_type AS type, event_date AS date, amount, message, next_due_date
-        FROM billing_events
-        WHERE server_id = :server_id
-        ORDER BY event_date DESC, created_at DESC
-        LIMIT 20
-    ');
-    $statement->execute([':server_id' => (string) ($server['id'] ?? '')]);
-    return $statement->fetchAll();
-}
-
-function add_billing_event(string $serverId, array $event): void
-{
-    $eventDate = (string) ($event['date'] ?? (new DateTimeImmutable())->format(DateTimeInterface::ATOM));
-    $type = (string) ($event['type'] ?? 'invoice_sent');
-    $message = (string) ($event['message'] ?? '');
-    $statement = db()->prepare('
-        INSERT INTO billing_events (
-            id, server_id, event_type, event_date, amount, message, next_due_date
-        ) VALUES (
-            :id, :server_id, :event_type, :event_date, :amount, :message, :next_due_date
-        )
-    ');
-    $statement->execute([
-        ':id' => billing_event_id($serverId, $type, $eventDate, $message),
-        ':server_id' => $serverId,
-        ':event_type' => $type,
-        ':event_date' => $eventDate,
-        ':amount' => (float) ($event['amount'] ?? 0),
-        ':message' => $message,
-        ':next_due_date' => empty($event['next_due_date']) ? null : (string) $event['next_due_date'],
-    ]);
-}
-
-function billing_event_id(string $serverId, string $type, string $eventDate, string $message): string
-{
-    return substr(hash('sha256', $serverId . '|' . $type . '|' . $eventDate . '|' . $message), 0, 32);
 }
 
 function days_until(?string $date): int
@@ -1232,7 +1071,7 @@ function send_whatsapp_message(array $server): void
     $invoicePdfBase64 = base64_encode(invoice_pdf($server));
     $payload = [
         'phone' => $phone,
-        'message' => simple_whatsapp_message($server),
+        'message' => whatsapp_message($server),
         'pdf_base64' => $invoicePdfBase64,
         'event' => 'server.renewal_reminder',
         'timestamp' => (new DateTimeImmutable())->format(DateTimeInterface::ATOM),
@@ -1247,48 +1086,6 @@ function send_whatsapp_message(array $server): void
         ],
     ];
 
-    post_json(WHATSAPP_WEBHOOK_URL, $payload);
-}
-
-function send_payment_received_message(array $server, DateTimeImmutable $nextDueDate): void
-{
-    $phone = normalize_whatsapp_phone((string) ($server['client_phone'] ?? ''));
-    if ($phone === '') {
-        throw new RuntimeException('Add a client WhatsApp phone first.');
-    }
-    if (!WHATSAPP_WEBHOOK_URL) {
-        throw new RuntimeException('WhatsApp webhook URL is not configured.');
-    }
-
-    $payload = [
-        'phone' => $phone,
-        'message' => payment_received_message($server, $nextDueDate),
-        'event' => 'server.payment_received',
-        'timestamp' => (new DateTimeImmutable())->format(DateTimeInterface::ATOM),
-        'sender' => WHATSAPP_SENDER,
-        'client' => [
-            'name' => (string) ($server['assigned_client'] ?? ''),
-            'phone' => $phone,
-        ],
-        'server' => $server,
-        'payment' => [
-            'amount' => (float) ($server['monthly_cost'] ?? 0),
-            'currency' => 'PKR',
-            'paid_until' => date_for_input((string) ($server['renewal_date'] ?? '')),
-            'next_due_date' => $nextDueDate->format('Y-m-d'),
-        ],
-    ];
-
-    post_json(WHATSAPP_WEBHOOK_URL, $payload);
-}
-
-function normalize_whatsapp_phone(string $phone): string
-{
-    return preg_replace('/\D+/', '', $phone) ?? '';
-}
-
-function post_json(string $url, array $payload): void
-{
     $context = stream_context_create([
         'http' => [
             'method' => 'POST',
@@ -1302,7 +1099,7 @@ function post_json(string $url, array $payload): void
         ],
     ]);
 
-    $response = file_get_contents($url, false, $context);
+    $response = file_get_contents(WHATSAPP_WEBHOOK_URL, false, $context);
     $statusLine = $http_response_header[0] ?? '';
     $ok = preg_match('/\s2\d\d\s/', $statusLine) === 1;
     $decoded = is_string($response) ? json_decode($response, true) : null;
@@ -1315,42 +1112,9 @@ function post_json(string $url, array $payload): void
     }
 }
 
-function simple_whatsapp_message(array $server): string
+function normalize_whatsapp_phone(string $phone): string
 {
-    $client = (string) ($server['assigned_client'] ?? 'Client');
-    $name = (string) ($server['name'] ?? 'Server');
-    $ip = first_ip((string) ($server['ip_address'] ?? ''));
-    $renewal = date_for_input((string) ($server['renewal_date'] ?? ''));
-    $days = days_until((string) ($server['renewal_date'] ?? ''));
-    $dueText = $days < 0
-        ? 'was due ' . abs($days) . ' day(s) ago'
-        : 'is due in ' . $days . ' day(s)';
-    $amount = number_format((float) ($server['monthly_cost'] ?? 0), 2);
-
-    return "*Dear {$client},*\n\n"
-        . "Your server renewal for *{$name}* ({$renewal}) {$dueText}.\n"
-        . "Server IP: {$ip}\n"
-        . "Monthly cost: PKR {$amount}\n\n"
-        . "Please arrange renewal to avoid service interruption.\n\n"
-        . 'Best regards,';
-}
-
-function payment_received_message(array $server, DateTimeImmutable $nextDueDate): string
-{
-    $client = (string) ($server['assigned_client'] ?? 'Client');
-    $name = (string) ($server['name'] ?? 'Server');
-    $ip = first_ip((string) ($server['ip_address'] ?? ''));
-    $paidUntil = date_for_input((string) ($server['renewal_date'] ?? ''));
-    $nextDue = $nextDueDate->format('Y-m-d');
-    $amount = number_format((float) ($server['monthly_cost'] ?? 0), 2);
-
-    return "*Dear {$client},*\n\n"
-        . "Thank you. We have received your payment for *{$name}*.\n"
-        . "Server IP: {$ip}\n"
-        . "Amount received: PKR {$amount}\n"
-        . "Paid until: {$paidUntil}\n"
-        . "Next payment due date: {$nextDue}\n\n"
-        . 'Best regards,';
+    return preg_replace('/\D+/', '', $phone) ?? '';
 }
 
 function whatsapp_message(array $server): string
@@ -1429,74 +1193,100 @@ function invoice_pdf(array $server): string
     $client = (string) ($server['assigned_client'] ?? 'Client');
     $location = (string) ($server['location'] ?? '');
     $name = (string) ($server['name'] ?? 'Server');
-    $pdf = begin_pdf();
-    $amountText = 'PKR' . $amount;
+  // Page: 612 x 842 (A4 portrait)
+  $pdf = begin_pdf();
 
-    rect_fill($pdf, 13, 802, 265, 22, '0.945 0.353 0.027');
-    rect_fill($pdf, 378, 802, 217, 22, '0.502 0.839 0.129');
+  // --- Decorative header bars (orange left, green right) ---
+  $barY = 800;
+  // Orange bar left
+  rect_fill($pdf, 40, $barY, 220, 12, '0.976 0.451 0.086'); // orange (#F97316)
+  // Green bar right
+  rect_fill($pdf, 352, $barY, 220, 12, '0.133 0.773 0.369'); // green (#22C55E)
 
-    $badgeX = 278;
-    $badgeY = 789;
-    $badgeW = 100;
-    $badgeH = 38;
-    rect_fill($pdf, $badgeX, $badgeY, $badgeW, $badgeH, '1 1 1');
-    rect_stroke($pdf, $badgeX, $badgeY, $badgeW, $badgeH, '0.945 0.353 0.027');
-    text($pdf, 'Invoice', 288, 801, 24, '/F1', '0.247 0.737 0.027');
+  // Centered Invoice badge (white box with orange border)
+  $badgeW = 120;
+  $badgeH = 28;
+  $badgeX = (612 / 2) - ($badgeW / 2);
+  $badgeY = $barY - 8;
+  // white fill
+  rect_fill($pdf, $badgeX, $badgeY, $badgeW, $badgeH, '1 1 1');
+  // orange border (draw as thin rectangle outline using lines)
+  line($pdf, $badgeX, $badgeY + $badgeH, $badgeX + $badgeW, $badgeY + $badgeH, '0.976 0.451 0.086');
+  line($pdf, $badgeX, $badgeY, $badgeX + $badgeW, $badgeY, '0.976 0.451 0.086');
+  line($pdf, $badgeX, $badgeY, $badgeX, $badgeY + $badgeH, '0.976 0.451 0.086');
+  line($pdf, $badgeX + $badgeW, $badgeY, $badgeX + $badgeW, $badgeY + $badgeH, '0.976 0.451 0.086');
+  text($pdf, 'Invoice', $badgeX + ($badgeW / 2) - 18, $badgeY + 8, 14, '/F1B', '0.133 0.773 0.369');
 
-    text($pdf, 'OneNet Solutions', 20, 748, 10, '/F1B', '0.247 0.737 0.027');
-    text($pdf, 'NTN# 1443348-6&', 20, 733, 11);
-    text($pdf, '&', 20, 718, 11);
-    text($pdf, 'Shop No.1, 83-D, The Mall,&', 20, 704, 11);
-    text($pdf, 'Lahore', 20, 690, 11);
-    text($pdf, '+923214424625', 20, 676, 11);
+  // Company block (left)
+  text($pdf, 'OneNet Solutions', 50, 760, 14, '/F1B', '0.133 0.773 0.369');
+  text($pdf, 'NTN# 1443348-6', 50, 744, 9, '/F1', '0.2 0.2 0.2');
+  text($pdf, 'Shop No.1, 83-D, The Mall, Lahore', 50, 730, 9, '/F1', '0.2 0.2 0.2');
+  text($pdf, '+923214424625', 50, 716, 9, '/F1', '0.2 0.2 0.2');
 
-    text($pdf, 'ONE', 256, 733, 23, '/F1B', '0.345 0.753 0.816');
-    text($pdf, 'NET', 306, 733, 23, '/F1B', '0.345 0.753 0.816');
-    text($pdf, 'SOLUTIONS', 266, 720, 9, '/F1B', '0.65 0.65 0.65');
+  // Invoice info (right)
+  text($pdf, 'Dated: ' . $renewalFormatted, 360, 760, 10, '/F1', '0 0 0');
+  text($pdf, 'Invoice No.: ' . $invoiceNo, 360, 744, 10, '/F1', '0 0 0');
 
-    text($pdf, 'Dated:', 410, 748, 11);
-    text($pdf, $renewalFormatted, 500, 748, 11);
-    text($pdf, 'Invoice No.:', 410, 733, 11);
-    text($pdf, $invoiceNo, 500, 733, 11);
+  // Bill To
+  text($pdf, 'Bill To:', 50, 700, 10, '/F1', '0.133 0.773 0.369');
+  text($pdf, $client, 50, 684, 12, '/F1B', '0 0 0');
+  text($pdf, $name, 50, 668, 10, '/F1', '0 0 0');
+  if ($location !== '') {
+    text($pdf, $location, 50, 652, 10, '/F1', '0 0 0');
+  }
 
-    text($pdf, 'Bill To:', 20, 633, 11, '/F1B', '0.247 0.737 0.027');
-    text($pdf, $client !== '' ? $client : 'Client', 20, 619, 11);
-    text($pdf, $name, 20, 605, 11);
-    if ($location !== '') {
-        text($pdf, $location, 20, 591, 11);
-    }
+  // Table columns
+  $tableTop = 620;
+  $tableLeft = 40;
+  $tableRight = 572;
+  $col1 = 60;   // Qty center
+  $col2 = 120;  // Description (wide)
+  $col3 = 420;  // Unit Price right aligned
+  $col4 = 500;  // Total right aligned
+  $rowH = 20;
 
-    $tableLeft = 13;
-    $tableRight = 595;
-    $tableTop = 565;
-    $tableBottom = 68;
-    $qtyX = 57;
-    $descX = 417;
-    $unitX = 506;
+  // Header row background (light green) and header labels in green
+  rect_fill($pdf, $tableLeft, $tableTop - $rowH, $tableRight - $tableLeft, $rowH, '0.965 0.98 0.96');
+  text($pdf, 'Qty', $col1, $tableTop - 6, 9, '/F1B', '0.133 0.773 0.369');
+  text($pdf, 'Description', $col2, $tableTop - 6, 9, '/F1B', '0.133 0.773 0.369');
+  text($pdf, 'Unit Price', $col3, $tableTop - 6, 9, '/F1B', '0.133 0.773 0.369');
+  text($pdf, 'Total', $col4, $tableTop - 6, 9, '/F1B', '0.133 0.773 0.369');
 
-    rect_stroke($pdf, $tableLeft, $tableBottom, $tableRight - $tableLeft, $tableTop - $tableBottom, '0 0 0');
-    line($pdf, $tableLeft, 541, $tableRight, 541, '0 0 0');
-    line($pdf, $qtyX, $tableTop, $qtyX, $tableBottom, '0 0 0');
-    line($pdf, $descX, $tableTop, $descX, $tableBottom, '0 0 0');
-    line($pdf, $unitX, $tableTop, $unitX, $tableBottom, '0 0 0');
+  // Single item row (multi-line description)
+  $rowY = $tableTop - $rowH - 6;
+  // light row background
+  rect_fill($pdf, $tableLeft, $rowY - 18, $tableRight - $tableLeft, 18, '1 1 1');
+  text($pdf, '1', $col1, $rowY - 4, 10, '/F1', '0 0 0');
+  text($pdf, 'Monthly Services Charges for the Month of ' . $monthYear, $col2, $rowY - 4, 9, '/F1', '0 0 0');
+  text($pdf, 'PKR ' . $amount, $col3, $rowY - 4, 10, '/F1', '0 0 0');
+  text($pdf, 'PKR ' . $amount, $col4, $rowY - 4, 10, '/F1', '0 0 0');
 
-    text_right($pdf, 'Qty', 51, 552, 10, '/F1B', '0.247 0.737 0.027');
-    text($pdf, 'Description', 62, 552, 10, '/F1B', '0.247 0.737 0.027');
-    text_right($pdf, 'Unit Price', 499, 552, 10, '/F1B', '0.247 0.737 0.027');
-    text_right($pdf, 'Total', 589, 552, 10, '/F1B', '0.247 0.737 0.027');
+  // Table grid lines (outer box and column separators)
+  line($pdf, $tableLeft, $tableTop, $tableRight, $tableTop, '0.6 0.6 0.6');
+  line($pdf, $tableLeft, $tableTop - $rowH, $tableRight, $tableTop - $rowH, '0.6 0.6 0.6');
+  $vlineY2 = $rowY - 18 - 10;
+  $vlineY1 = $tableTop;
+  line($pdf, $tableLeft, $vlineY1, $tableLeft, $vlineY2, '0.6 0.6 0.6');
+  line($pdf, 95, $vlineY1, 95, $vlineY2, '0.6 0.6 0.6');
+  line($pdf, $col3 - 10, $vlineY1, $col3 - 10, $vlineY2, '0.6 0.6 0.6');
+  line($pdf, $col4 + 12, $vlineY1, $col4 + 12, $vlineY2, '0.6 0.6 0.6');
+  line($pdf, $tableRight, $vlineY1, $tableRight, $vlineY2, '0.6 0.6 0.6');
 
-    text_right($pdf, '1', 52, 526, 10);
-    text($pdf, 'Monthly Services Charges for the Month of ' . $monthYear, 62, 526, 10);
-    text_right($pdf, $amountText, 499, 526, 10);
-    text_right($pdf, $amountText, 589, 526, 10);
+  // Totals area
+  $totalY = $vlineY2 - 20;
+  text($pdf, 'Total', 360, $totalY - 4, 11, '/F1B', '0 0 0');
+  text($pdf, 'PKR ' . $amount, $col4, $totalY - 4, 11, '/F1B', '0 0 0');
 
-    text_right($pdf, 'Total', 523, 49, 10, '/F1B');
-    text_right($pdf, $amountText, 590, 49, 10, '/F1B');
-    text_right($pdf, 'Grand Total', 523, 32, 10, '/F1B');
-    text_right($pdf, $amountText, 590, 32, 10, '/F1B');
-    text($pdf, 'Thank you for your business.', 14, 8, 11, '/F1B');
+  $grandY = $totalY - 26;
+  // dark green grand total bar
+  rect_fill($pdf, $tableLeft, $grandY - 14, $tableRight - $tableLeft, 18, '0.133 0.773 0.369');
+  text($pdf, 'Grand Total', 340, $grandY - 4, 11, '/F1B', '1 1 1');
+  text($pdf, 'PKR ' . $amount, $col4, $grandY - 4, 11, '/F1B', '1 1 1');
 
-    return end_pdf($pdf);
+  // Footer
+  text($pdf, 'Thank you for your business.', 50, $grandY - 50, 10, '/F1', '0.2 0.2 0.2');
+
+  return end_pdf($pdf);
 }
 
 // --- PDF primitives ---
@@ -1516,28 +1306,9 @@ function rect_fill(array &$pdf, float $x, float $y, float $w, float $h, string $
     $pdf['content'] .= "{$color} rg\n{$x} {$y} {$w} {$h} re\nf\n";
 }
 
-function rect_stroke(array &$pdf, float $x, float $y, float $w, float $h, string $color): void
-{
-    $pdf['content'] .= "{$color} RG\n{$x} {$y} {$w} {$h} re\nS\n";
-}
-
 function line(array &$pdf, float $x1, float $y1, float $x2, float $y2, string $color): void
 {
     $pdf['content'] .= "{$color} RG\n{$x1} {$y1} m\n{$x2} {$y2} l\nS\n";
-}
-
-function text_right(array &$pdf, string $str, float $right, float $y, float $size, string $font = '/F1', string $color = '0 0 0'): void
-{
-    text($pdf, $str, $right - approx_text_width($str, $size), $y, $size, $font, $color);
-}
-
-function approx_text_width(string $str, float $size): float
-{
-    $width = 0.0;
-    foreach (str_split($str) as $char) {
-        $width += preg_match('/[ilI1., ]/', $char) ? 0.28 : 0.56;
-    }
-    return $width * $size;
 }
 
 function end_pdf(array $pdf): string

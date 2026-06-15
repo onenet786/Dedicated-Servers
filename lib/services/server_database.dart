@@ -10,7 +10,7 @@ class ServerDatabase {
   static final ServerDatabase instance = ServerDatabase._();
 
   static const _databaseName = 'server_manager.db';
-  static const _databaseVersion = 4;
+  static const _databaseVersion = 5;
   static const serversTable = 'servers';
 
   Database? _database;
@@ -52,6 +52,7 @@ class ServerDatabase {
         client_phone TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL,
         notes TEXT NOT NULL,
+        billing_history TEXT NOT NULL DEFAULT '[]',
         vm_cpu_cores INTEGER,
         vm_memory_gb REAL,
         vm_disk_gb REAL,
@@ -106,6 +107,11 @@ class ServerDatabase {
     if (!columns.contains('client_phone')) {
       await database.execute(
         "ALTER TABLE $serversTable ADD COLUMN client_phone TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    if (!columns.contains('billing_history')) {
+      await database.execute(
+        "ALTER TABLE $serversTable ADD COLUMN billing_history TEXT NOT NULL DEFAULT '[]'",
       );
     }
 
