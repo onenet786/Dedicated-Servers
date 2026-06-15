@@ -53,7 +53,7 @@ class ReportsScreen extends StatelessWidget {
                       _ReportMetric('Total', '${roots.length}', Icons.storage_outlined),
                       _ReportMetric('Active', '${_countStatus(roots, ServerStatus.active)}', Icons.check_circle_outline),
                       _ReportMetric('Due / Overdue', '${roots.where((server) => server.daysUntilRenewal <= 7).length}', Icons.event_busy_outlined),
-                      _ReportMetric('Monthly', '\$${store.monthlySpend.toStringAsFixed(0)}', Icons.payments_outlined),
+                      _ReportMetric('Monthly', 'PKR ${store.monthlySpend.toStringAsFixed(0)}', Icons.payments_outlined),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -174,7 +174,7 @@ class _ReportHero extends StatelessWidget {
             metrics: [
               _ReportMetric('Dedicated', '$dedicatedCount', Icons.dns_rounded),
               _ReportMetric('VMs', '$vmCount', Icons.developer_board_outlined),
-              _ReportMetric('Monthly', '\$${monthlySpend.toStringAsFixed(0)}', Icons.payments_outlined),
+              _ReportMetric('Monthly', 'PKR ${monthlySpend.toStringAsFixed(0)}', Icons.payments_outlined),
               _ReportMetric('Due 30d', '$dueCount', Icons.event_busy_outlined),
             ],
           ),
@@ -477,7 +477,7 @@ List<Widget> _moneyRows(Map<String, double> values, double total, {required Stri
   return rows.take(6).map((entry) {
     return _ReportRow(
       label: entry.key,
-      value: '\$${entry.value.toStringAsFixed(0)}',
+      value: 'PKR ${entry.value.toStringAsFixed(0)}',
       percent: entry.value / total,
     );
   }).toList();

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -11,6 +11,7 @@ class RenewalNotificationService {
 
   static final RenewalNotificationService instance =
       RenewalNotificationService._();
+  static const _timezoneChannel = MethodChannel('server_manager_app/timezone');
 
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
@@ -168,8 +169,14 @@ class RenewalNotificationService {
 
   Future<void> _setLocalTimezone() async {
     try {
-      final timezone = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(timezone.identifier));
+      final timezone = await _timezoneChannel.invokeMethod<String>(
+        'getLocalTimezone',
+      );
+      if (timezone == null || timezone.isEmpty) {
+        tz.setLocalLocation(tz.UTC);
+        return;
+      }
+      tz.setLocalLocation(tz.getLocation(timezone));
     } catch (_) {
       tz.setLocalLocation(tz.UTC);
     }

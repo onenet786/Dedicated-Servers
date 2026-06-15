@@ -12,7 +12,6 @@ CREATE TABLE servers (
   purchase_date VARCHAR(40) NOT NULL,
   renewal_date VARCHAR(40) NOT NULL,
   assigned_client VARCHAR(255) NOT NULL,
-  client_phone VARCHAR(40) NOT NULL DEFAULT '',
   status VARCHAR(40) NOT NULL,
   notes TEXT NOT NULL,
   vm_cpu_cores INT NULL,

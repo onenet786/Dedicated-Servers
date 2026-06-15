@@ -10,7 +10,7 @@ class ServerDatabase {
   static final ServerDatabase instance = ServerDatabase._();
 
   static const _databaseName = 'server_manager.db';
-  static const _databaseVersion = 3;
+  static const _databaseVersion = 4;
   static const serversTable = 'servers';
 
   Database? _database;
@@ -27,6 +27,7 @@ class ServerDatabase {
       version: _databaseVersion,
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
+      onOpen: _ensureDatabaseSchema,
     );
     _database = database;
     return database;
@@ -48,6 +49,7 @@ class ServerDatabase {
         purchase_date TEXT NOT NULL,
         renewal_date TEXT NOT NULL,
         assigned_client TEXT NOT NULL,
+        client_phone TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL,
         notes TEXT NOT NULL,
         vm_cpu_cores INTEGER,
@@ -74,19 +76,53 @@ class ServerDatabase {
     int oldVersion,
     int newVersion,
   ) async {
-    if (oldVersion < 2) {
-      await database.execute('ALTER TABLE $serversTable ADD COLUMN parent_id TEXT');
-      await database.execute(
-        'CREATE INDEX IF NOT EXISTS idx_servers_parent_id ON $serversTable (parent_id)',
-      );
+    await _ensureDatabaseSchema(database);
+  }
+
+  Future<void> _ensureDatabaseSchema(Database database) async {
+    if (kIsWeb) {
+      return;
     }
-    if (oldVersion < 3) {
+
+    final columns = await _columnNames(database);
+    if (!columns.contains('parent_id')) {
+      await database.execute('ALTER TABLE $serversTable ADD COLUMN parent_id TEXT');
+    }
+    if (!columns.contains('vm_cpu_cores')) {
       await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_cpu_cores INTEGER');
+    }
+    if (!columns.contains('vm_memory_gb')) {
       await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_memory_gb REAL');
+    }
+    if (!columns.contains('vm_disk_gb')) {
       await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_disk_gb REAL');
+    }
+    if (!columns.contains('vm_storage')) {
       await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_storage TEXT');
+    }
+    if (!columns.contains('vm_role')) {
       await database.execute('ALTER TABLE $serversTable ADD COLUMN vm_role TEXT');
     }
+    if (!columns.contains('client_phone')) {
+      await database.execute(
+        "ALTER TABLE $serversTable ADD COLUMN client_phone TEXT NOT NULL DEFAULT ''",
+      );
+    }
+
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_servers_renewal_date ON $serversTable (renewal_date)',
+    );
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_servers_parent_id ON $serversTable (parent_id)',
+    );
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_servers_assigned_client ON $serversTable (assigned_client)',
+    );
+  }
+
+  Future<Set<String>> _columnNames(Database database) async {
+    final rows = await database.rawQuery('PRAGMA table_info($serversTable)');
+    return rows.map((row) => row['name'].toString()).toSet();
   }
 
   Future<List<ManagedServer>> fetchServers() async {

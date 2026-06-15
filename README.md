@@ -29,7 +29,13 @@ https://yourdomain.com/server-manager/api
 
 4. Edit `api/config.php` with your database name, user, password, and `API_KEY`.
    Also change `WEB_PASSWORD`; this protects the browser dashboard.
-5. Edit `lib/config/app_config.dart`:
+5. If your database already existed before VM/sub-server support, run the guarded migration URL once:
+
+```text
+https://yourdomain.com/server-manager/api/migrate.php?key=same-key-as-api-config
+```
+
+6. Edit `lib/config/app_config.dart`:
 
 ```dart
 static const remoteApiBaseUrl = 'https://yourdomain.com/server-manager/api';

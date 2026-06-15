@@ -59,7 +59,15 @@ class ServerApi {
   }
 
   Map<String, dynamic> _decode(http.Response response) {
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    } on FormatException {
+      throw const ServerApiException(
+        'Hosted server returned an invalid response. Check the API URL and PHP error log.',
+      );
+    }
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ServerApiException(decoded['error']?.toString() ?? 'Remote server error');
     }

@@ -540,7 +540,7 @@ function render_list_view(array $servers, array $statusLabels): void
       <div class="metrics">
         <div class="metric"><strong><?= $dueSoon ?></strong><span>Due soon</span></div>
         <div class="metric"><strong><?= $vmCount ?></strong><span>VMs</span></div>
-        <div class="metric"><strong>PKR <?= number_format($monthly, 0) ?></strong><span>Monthly</span></div>
+        <div class="metric"><strong>$<?= number_format($monthly, 0) ?></strong><span>Monthly</span></div>
       </div>
     </section>
 
@@ -579,7 +579,7 @@ function render_reports_view(array $servers, array $statusLabels): void
       <div class="metrics">
         <div class="metric"><strong><?= count($roots) ?></strong><span>Dedicated</span></div>
         <div class="metric"><strong><?= count($vms) ?></strong><span>VMs</span></div>
-        <div class="metric"><strong>PKR <?= number_format($monthly, 0) ?></strong><span>Monthly</span></div>
+        <div class="metric"><strong>$<?= number_format($monthly, 0) ?></strong><span>Monthly</span></div>
       </div>
     </section>
 
@@ -590,7 +590,7 @@ function render_reports_view(array $servers, array $statusLabels): void
           <?php report_metric('Total', (string) count($roots)); ?>
           <?php report_metric('Active', (string) count_status($roots, 'active')); ?>
           <?php report_metric('Due / Overdue', (string) count(array_filter($roots, fn(array $server): bool => days_until($server['renewal_date'] ?? null) <= 7))); ?>
-          <?php report_metric('Monthly', 'PKR ' . number_format($monthly, 0)); ?>
+          <?php report_metric('Monthly', '$' . number_format($monthly, 0)); ?>
         </div>
         <?php foreach ($statusLabels as $status => $label): ?>
           <?php report_bar($label, count_status($roots, $status), max(count($roots), 1)); ?>
@@ -677,7 +677,7 @@ function render_detail_view(array $servers, array $statusLabels): void
     <section class="hero">
       <div class="eyebrow"><?= $isVm ? 'Virtual Machine' : 'Dedicated Server' ?></div>
       <h1><?= h($server['name']) ?></h1>
-      <p><?= h(first_ip((string) $server['ip_address'])) ?> &nbsp; <span class="chip <?= h($server['status']) ?>"><?= h($statusLabels[$server['status']] ?? $server['status']) ?></span></p>
+      <p><?= h($server['ip_address']) ?> &nbsp; <span class="chip <?= h($server['status']) ?>"><?= h($statusLabels[$server['status']] ?? $server['status']) ?></span></p>
       <div class="actions">
         <a class="button secondary" href="index.php">Back</a>
         <a class="button secondary" href="index.php?page=form&id=<?= urlencode($server['id']) ?>">Edit</a>
@@ -729,7 +729,7 @@ function render_detail_view(array $servers, array $statusLabels): void
         <div class="info-grid">
           <?php info('Assigned Client', $server['assigned_client']); ?>
           <?php info('Client WhatsApp Phone', ($server['client_phone'] ?? '') ?: 'Not added'); ?>
-          <?php info('Monthly Cost', 'PKR ' . number_format((float) $server['monthly_cost'], 2)); ?>
+          <?php info('Monthly Cost', '$' . number_format((float) $server['monthly_cost'], 2)); ?>
           <?php info('Purchase Date', date_for_input($server['purchase_date'])); ?>
           <?php info('Renewal Date', date_for_input($server['renewal_date']) . ' (' . renewal_text($server['renewal_date']) . ')'); ?>
         </div>
@@ -868,7 +868,7 @@ function render_server_card(array $server, array $allServers, array $statusLabel
       <div class="server-head">
         <div>
           <div class="server-name"><?= h($server['name']) ?></div>
-          <div class="muted"><?= $isVm ? 'VM / Sub server - ' : '' ?><?= h(first_ip((string) $server['ip_address'])) ?></div>
+          <div class="muted"><?= $isVm ? 'VM / Sub server - ' : '' ?><?= h($server['ip_address']) ?></div>
         </div>
         <span class="chip <?= h($server['status']) ?>"><?= h($statusLabels[$server['status']] ?? $server['status']) ?></span>
       </div>
@@ -1040,7 +1040,7 @@ function report_money_bars(array $groups, float $total, string $emptyText): void
     }
 
     foreach (array_slice($groups, 0, 6, true) as $label => $value) {
-        report_bar((string) $label . ' - PKR ' . number_format((float) $value, 0), (float) $value, $total);
+        report_bar((string) $label . ' - $' . number_format((float) $value, 0), (float) $value, $total);
     }
 }
 
@@ -1068,18 +1068,12 @@ function send_whatsapp_message(array $server): void
         throw new RuntimeException('WhatsApp webhook URL is not configured in api/config.php.');
     }
 
-    $invoicePdfBase64 = base64_encode(invoice_pdf($server));
     $payload = [
         'phone' => $phone,
         'message' => whatsapp_message($server),
-        'pdf_base64' => $invoicePdfBase64,
         'event' => 'server.renewal_reminder',
         'timestamp' => (new DateTimeImmutable())->format(DateTimeInterface::ATOM),
         'sender' => WHATSAPP_SENDER,
-        'invoice' => [
-            'filename' => invoice_file_name($server),
-            'pdf' => $invoicePdfBase64,
-        ],
         'client' => [
             'name' => (string) ($server['assigned_client'] ?? ''),
             'phone' => $phone,
@@ -1121,7 +1115,7 @@ function whatsapp_message(array $server): string
 {
     $client = (string) ($server['assigned_client'] ?? 'Client');
     $name = (string) ($server['name'] ?? 'Server');
-    $ip = first_ip((string) ($server['ip_address'] ?? ''));
+    $ip = (string) ($server['ip_address'] ?? '');
 
     if (!empty($server['parent_id'])) {
         return "*Dear {$client},*\n\n"
@@ -1139,99 +1133,9 @@ function whatsapp_message(array $server): string
     return "*Dear {$client},*\n\n"
         . "Your server renewal for *{$name}* ({$renewal}) {$dueText}.\n"
         . "Server IP: {$ip}\n"
-        . 'Invoice amount: PKR ' . number_format((float) ($server['monthly_cost'] ?? 0), 2) . "\n\n"
-        . "Invoice PDF is attached. Please arrange renewal to avoid service interruption.\n\n"
+        . 'Monthly cost: $' . number_format((float) ($server['monthly_cost'] ?? 0), 2) . "\n\n"
+        . "Please arrange renewal to avoid service interruption.\n\n"
         . 'Best regards,';
-}
-
-function first_ip(string $ipAddress): string
-{
-    $parts = preg_split('/[,;\s]+/', $ipAddress) ?: [];
-    foreach ($parts as $part) {
-        $part = trim($part);
-        if ($part !== '') {
-            return $part;
-        }
-    }
-    return $ipAddress;
-}
-
-function invoice_file_name(array $server): string
-{
-    $client = preg_replace('/[^A-Za-z0-9]+/', '_', (string) ($server['assigned_client'] ?? 'Client')) ?: 'Client';
-    $client = trim($client, '_') ?: 'Client';
-    $date = date_for_input((string) ($server['renewal_date'] ?? ''));
-    return 'OneNetSol_' . $client . '_' . str_replace('-', '', $date) . '.pdf';
-}
-
-function invoice_pdf(array $server): string
-{
-    $renewal = date_for_input((string) ($server['renewal_date'] ?? ''));
-    $invoiceNo = 'OneNetSol-' . substr((string) ($server['id'] ?? 'invoice'), 0, 8);
-    $amount = 'PKR ' . number_format((float) ($server['monthly_cost'] ?? 0), 2);
-    $lines = [
-        ['OneNet Solutions Pakistan', 50, 790, 18],
-        ['INVOICE', 455, 790, 20],
-        ['Invoice No: ' . $invoiceNo, 50, 750, 11],
-        ['Invoice Date: ' . $renewal, 50, 734, 11],
-        ['Bill To: ' . (string) ($server['assigned_client'] ?? 'Client'), 50, 704, 12],
-        ['Server Renewal Invoice', 50, 660, 14],
-        ['Description', 55, 625, 11],
-        ['Amount', 470, 625, 11],
-        ['Renewal for ' . (string) ($server['name'] ?? 'Server'), 55, 595, 11],
-        ['Server IP: ' . first_ip((string) ($server['ip_address'] ?? '')), 55, 579, 11],
-        ['Provider: ' . (string) ($server['provider'] ?? ''), 55, 563, 11],
-        [$amount, 450, 595, 11],
-        ['Total Due', 360, 520, 13],
-        [$amount, 450, 520, 13],
-        ['Please arrange renewal to avoid service interruption.', 50, 470, 11],
-        ['Thank you for your business.', 50, 446, 11],
-    ];
-
-    return simple_pdf($lines);
-}
-
-function simple_pdf(array $lines): string
-{
-    $content = "BT\n";
-    foreach ($lines as [$text, $x, $y, $size]) {
-        $content .= "/F1 {$size} Tf\n";
-        $content .= "{$x} {$y} Td\n";
-        $content .= '(' . pdf_escape((string) $text) . ") Tj\n";
-        $content .= (-$x) . ' ' . (-$y) . " Td\n";
-    }
-    $content .= 'ET';
-
-    $objects = [
-        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-        "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
-        "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-        "5 0 obj\n<< /Length " . strlen($content) . " >>\nstream\n{$content}\nendstream\nendobj\n",
-    ];
-
-    $pdf = "%PDF-1.4\n";
-    $offsets = [0];
-    foreach ($objects as $object) {
-        $offsets[] = strlen($pdf);
-        $pdf .= $object;
-    }
-    $xrefOffset = strlen($pdf);
-    $pdf .= "xref\n0 " . (count($objects) + 1) . "\n";
-    $pdf .= "0000000000 65535 f \n";
-    foreach (array_slice($offsets, 1) as $offset) {
-        $pdf .= str_pad((string) $offset, 10, '0', STR_PAD_LEFT) . " 00000 n \n";
-    }
-    $pdf .= "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\n";
-    $pdf .= "startxref\n{$xrefOffset}\n%%EOF";
-
-    return $pdf;
-}
-
-function pdf_escape(string $value): string
-{
-    $value = preg_replace('/[^\x20-\x7E]/', ' ', $value) ?? '';
-    return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $value);
 }
 
 function set_flash(string $type, string $message): void

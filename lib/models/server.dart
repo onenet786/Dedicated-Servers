@@ -15,6 +15,7 @@ class ManagedServer {
     required this.purchaseDate,
     required this.renewalDate,
     required this.assignedClient,
+    required this.clientPhone,
     required this.status,
     required this.notes,
     this.vmCpuCores,
@@ -37,6 +38,7 @@ class ManagedServer {
   final DateTime purchaseDate;
   final DateTime renewalDate;
   final String assignedClient;
+  final String clientPhone;
   final ServerStatus status;
   final String notes;
   final int? vmCpuCores;
@@ -62,6 +64,7 @@ class ManagedServer {
       purchaseDate: DateTime.parse(map['purchase_date'] as String),
       renewalDate: DateTime.parse(map['renewal_date'] as String),
       assignedClient: map['assigned_client'] as String,
+      clientPhone: (map['client_phone'] ?? '').toString(),
       status: ServerStatus.values.byName(map['status'] as String),
       notes: map['notes'] as String,
       vmCpuCores: _readNullableInt(map['vm_cpu_cores']),
@@ -109,6 +112,7 @@ class ManagedServer {
     DateTime? purchaseDate,
     DateTime? renewalDate,
     String? assignedClient,
+    String? clientPhone,
     ServerStatus? status,
     String? notes,
     int? vmCpuCores,
@@ -131,6 +135,7 @@ class ManagedServer {
       purchaseDate: purchaseDate ?? this.purchaseDate,
       renewalDate: renewalDate ?? this.renewalDate,
       assignedClient: assignedClient ?? this.assignedClient,
+      clientPhone: clientPhone ?? this.clientPhone,
       status: status ?? this.status,
       notes: notes ?? this.notes,
       vmCpuCores: vmCpuCores ?? this.vmCpuCores,
@@ -156,6 +161,7 @@ class ManagedServer {
       'purchase_date': purchaseDate.toIso8601String(),
       'renewal_date': renewalDate.toIso8601String(),
       'assigned_client': assignedClient,
+      'client_phone': clientPhone,
       'status': status.name,
       'notes': notes,
       'vm_cpu_cores': vmCpuCores,

@@ -7,15 +7,40 @@ import '../theme/app_theme.dart';
 import '../widgets/server_status_chip.dart';
 import 'server_form_screen.dart';
 
-class ServerDetailScreen extends StatelessWidget {
-  const ServerDetailScreen({super.key, required this.store, required this.serverId});
+class ServerDetailScreen extends StatefulWidget {
+  const ServerDetailScreen({
+    super.key,
+    required this.store,
+    required this.serverId,
+    this.initialServer,
+  });
 
   final ServerStore store;
   final String serverId;
+  final ManagedServer? initialServer;
+
+  @override
+  State<ServerDetailScreen> createState() => _ServerDetailScreenState();
+}
+
+class _ServerDetailScreenState extends State<ServerDetailScreen> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final server = store.byId(serverId);
+    final server = widget.initialServer ?? widget.store.byId(widget.serverId);
 
     if (server == null) {
       return Scaffold(
@@ -25,7 +50,7 @@ class ServerDetailScreen extends StatelessWidget {
     }
 
     final dateFormat = DateFormat('MMM d, yyyy');
-    final subServers = store.childrenOf(server.id);
+    final subServers = widget.store.childrenOf(server.id);
     final isVm = server.isVirtualMachine;
 
     return Scaffold(
@@ -35,7 +60,7 @@ class ServerDetailScreen extends StatelessWidget {
           IconButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => ServerFormScreen(store: store, server: server),
+                builder: (_) => ServerFormScreen(store: widget.store, server: server),
               ),
             ),
             icon: const Icon(Icons.edit_outlined),
@@ -44,9 +69,9 @@ class ServerDetailScreen extends StatelessWidget {
             IconButton(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => ServerFormScreen(
-                    store: store,
-                    parentServer: server,
+                      builder: (_) => ServerFormScreen(
+                        store: widget.store,
+                        parentServer: server,
                   ),
                 ),
               ),
@@ -67,6 +92,9 @@ class ServerDetailScreen extends StatelessWidget {
           ),
         ),
         child: ListView(
+          key: PageStorageKey<String>('server-detail-${server.id}'),
+          controller: _scrollController,
+          primary: false,
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
           children: [
             Container(
@@ -101,7 +129,7 @@ class ServerDetailScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Text(server.ipAddress, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFFBAE6FD))),
+                  Text(_firstIp(server.ipAddress), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFFBAE6FD))),
                   if (!isVm) ...[
                     const SizedBox(height: 18),
                     _RenewalBanner(server: server),
@@ -115,7 +143,7 @@ class ServerDetailScreen extends StatelessWidget {
                 title: 'VM Configuration',
                 color: AppColors.info,
                 rows: [
-                  _InfoRow('Host Server', store.byId(server.parentId ?? '')?.name ?? 'Dedicated host'),
+                  _InfoRow('Host Server', widget.store.byId(server.parentId ?? '')?.name ?? 'Dedicated host'),
                   _InfoRow('Operating System', server.operatingSystem),
                   _InfoRow('vCPU', server.vmCpuCores?.toString() ?? 'Not set'),
                   _InfoRow('Memory', server.vmMemoryGb == null ? 'Not set' : '${_formatNumber(server.vmMemoryGb!)} GB'),
@@ -124,8 +152,13 @@ class ServerDetailScreen extends StatelessWidget {
                   _InfoRow('Role / Purpose', server.vmRole ?? 'Not set'),
                   _InfoRow('Login User', server.loginUser),
                   _InfoRow('Assigned Client', server.assignedClient),
+                  _InfoRow('Client WhatsApp Phone', server.clientPhone.isEmpty ? 'Not added' : server.clientPhone),
                 ],
               )
+            else
+              const SizedBox.shrink(),
+            if (isVm)
+              _WhatsAppCard(store: widget.store, server: server)
             else ...[
               _Section(
                 title: 'Server Information',
@@ -143,13 +176,15 @@ class ServerDetailScreen extends StatelessWidget {
                 color: AppColors.success,
                 rows: [
                   _InfoRow('Assigned Client', server.assignedClient),
-                  _InfoRow('Monthly Cost', '\$${server.monthlyCost.toStringAsFixed(2)}'),
+                  _InfoRow('Client WhatsApp Phone', server.clientPhone.isEmpty ? 'Not added' : server.clientPhone),
+                  _InfoRow('Monthly Cost', 'PKR ${server.monthlyCost.toStringAsFixed(2)}'),
                   _InfoRow('Purchase Date', dateFormat.format(server.purchaseDate)),
                   _InfoRow('Renewal Date', dateFormat.format(server.renewalDate)),
                 ],
               ),
+              _WhatsAppCard(store: widget.store, server: server),
               _SubServerSection(
-                store: store,
+                store: widget.store,
                 parent: server,
                 subServers: subServers,
               ),
@@ -179,7 +214,7 @@ class ServerDetailScreen extends StatelessWidget {
     );
 
     if (shouldDelete == true && context.mounted) {
-      await store.delete(server.id);
+      await widget.store.delete(server.id);
       if (context.mounted) {
         Navigator.of(context).pop();
       }
@@ -191,6 +226,77 @@ String _formatNumber(double value) {
   return value.truncateToDouble() == value
       ? value.toStringAsFixed(0)
       : value.toStringAsFixed(1);
+}
+
+class _WhatsAppCard extends StatefulWidget {
+  const _WhatsAppCard({required this.store, required this.server});
+
+  final ServerStore store;
+  final ManagedServer server;
+
+  @override
+  State<_WhatsAppCard> createState() => _WhatsAppCardState();
+}
+
+class _WhatsAppCardState extends State<_WhatsAppCard> {
+  bool _sending = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPhone = widget.server.clientPhone.trim().isNotEmpty;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const Icon(Icons.chat_outlined, color: AppColors.success),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Send WhatsApp message',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: _sending || !hasPhone ? null : _send,
+              icon: _sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send_outlined),
+              label: Text(_sending ? 'Sending' : 'Send'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _send() async {
+    setState(() => _sending = true);
+    try {
+      await widget.store.sendWhatsAppMessage(widget.server);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WhatsApp message sent.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
+    }
+  }
 }
 
 class _SubServerSection extends StatelessWidget {
@@ -259,6 +365,7 @@ class _SubServerSection extends StatelessWidget {
                       builder: (_) => ServerDetailScreen(
                         store: store,
                         serverId: server.id,
+                        initialServer: server,
                       ),
                     ),
                   ),
@@ -305,7 +412,7 @@ class _SubServerTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      server.ipAddress,
+                      _firstIp(server.ipAddress),
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -321,6 +428,13 @@ class _SubServerTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _firstIp(String ipAddress) {
+  return ipAddress.split(RegExp(r'[,;\s]+')).firstWhere(
+        (part) => part.trim().isNotEmpty,
+        orElse: () => ipAddress,
+      );
 }
 
 class _RenewalBanner extends StatelessWidget {

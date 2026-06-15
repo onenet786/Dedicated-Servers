@@ -7,6 +7,8 @@ const DB_USER = 'your_database_user';
 const DB_PASS = 'your_database_password';
 const API_KEY = 'change-this-secret-key';
 const WEB_PASSWORD = 'change-this-web-password';
+const WHATSAPP_WEBHOOK_URL = 'http://192.168.85.130:5678/webhook/whatsapp-invoice';
+const WHATSAPP_SENDER = 'reports4';
 
 function db(): PDO
 {

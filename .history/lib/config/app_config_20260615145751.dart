@@ -8,13 +8,16 @@ class AppConfig {
   // Must match API_KEY in api/config.php.
   static const remoteApiKey = 'Admin786';
 
-  static const whatsappWebhookUrl =
-      'http://192.168.85.130:5678/webhook/whatsapp-invoice';
+  static const whatsappApiBaseUrl = 'https://ledger.flaura.pk';
+
+  // Bearer JWT from POST https://ledger.flaura.pk/api/auth/login.
+  static const whatsappBearerToken = '';
 
   static const whatsappSender = 'reports4';
 
   static bool get hasRemoteApi => remoteApiBaseUrl.trim().isNotEmpty;
 
   static bool get hasWhatsAppApi =>
-      whatsappWebhookUrl.trim().isNotEmpty;
+      whatsappApiBaseUrl.trim().isNotEmpty &&
+      whatsappBearerToken.trim().isNotEmpty;
 }

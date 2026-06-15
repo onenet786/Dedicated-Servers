@@ -31,6 +31,7 @@ class _ServerFormScreenState extends State<ServerFormScreen> {
   late final TextEditingController _loginController;
   late final TextEditingController _costController;
   late final TextEditingController _clientController;
+  late final TextEditingController _clientPhoneController;
   late final TextEditingController _notesController;
   late final TextEditingController _cpuController;
   late final TextEditingController _memoryController;
@@ -58,6 +59,7 @@ class _ServerFormScreenState extends State<ServerFormScreen> {
     _loginController = TextEditingController(text: server?.loginUser ?? 'root');
     _costController = TextEditingController(text: server == null ? '' : server.monthlyCost.toStringAsFixed(2));
     _clientController = TextEditingController(text: server?.assignedClient ?? parent?.assignedClient ?? '');
+    _clientPhoneController = TextEditingController(text: server?.clientPhone ?? parent?.clientPhone ?? '');
     _notesController = TextEditingController(text: server?.notes ?? '');
     _cpuController = TextEditingController(text: server?.vmCpuCores?.toString() ?? '');
     _memoryController = TextEditingController(text: server?.vmMemoryGb?.toString() ?? '');
@@ -80,6 +82,7 @@ class _ServerFormScreenState extends State<ServerFormScreen> {
     _loginController.dispose();
     _costController.dispose();
     _clientController.dispose();
+    _clientPhoneController.dispose();
     _notesController.dispose();
     _cpuController.dispose();
     _memoryController.dispose();
@@ -137,6 +140,13 @@ class _ServerFormScreenState extends State<ServerFormScreen> {
               if (!_isSubServer)
                 _Field(controller: _costController, label: 'Monthly Cost', icon: Icons.payments_outlined, keyboardType: TextInputType.number),
               _Field(controller: _clientController, label: 'Assigned Client', icon: Icons.business_center_outlined),
+              _Field(
+                controller: _clientPhoneController,
+                label: 'Client WhatsApp Phone',
+                icon: Icons.chat_outlined,
+                keyboardType: TextInputType.phone,
+                required: false,
+              ),
               const SizedBox(height: 8),
               _StatusPicker(value: _status, onChanged: (value) => setState(() => _status = value)),
               if (!_isSubServer) ...[
@@ -210,6 +220,7 @@ class _ServerFormScreenState extends State<ServerFormScreen> {
       purchaseDate: _isSubServer ? parent?.purchaseDate ?? _purchaseDate : _purchaseDate,
       renewalDate: _isSubServer ? parent?.renewalDate ?? _renewalDate : _renewalDate,
       assignedClient: _clientController.text.trim(),
+      clientPhone: _clientPhoneController.text.trim(),
       status: _status,
       notes: _notesController.text.trim(),
       vmCpuCores: _isSubServer ? vmCpu : null,

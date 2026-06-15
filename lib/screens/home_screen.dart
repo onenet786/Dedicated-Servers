@@ -39,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final servers = widget.store.search(_query);
+    final loadError = widget.store.loadError;
 
     return Scaffold(
       appBar: AppBar(
@@ -80,6 +81,10 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 100),
             children: [
+              if (loadError != null) ...[
+                _RemoteErrorBanner(message: loadError),
+                const SizedBox(height: 12),
+              ],
               _HeroCard(store: widget.store),
               const SizedBox(height: 18),
               TextField(
@@ -119,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         builder: (_) => ServerDetailScreen(
                           store: widget.store,
                           serverId: server.id,
+                          initialServer: server,
                         ),
                       ),
                     ),
@@ -146,6 +152,37 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Test notification sent')),
+    );
+  }
+}
+
+class _RemoteErrorBanner extends StatelessWidget {
+  const _RemoteErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFFFEE2E2),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off_outlined, color: AppColors.danger),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Hosted server unavailable: $message',
+                style: const TextStyle(
+                  color: AppColors.danger,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -201,7 +238,7 @@ class _HeroCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(child: _Metric(icon: Icons.developer_board_outlined, label: 'VMs', value: '${store.vmCount}', color: const Color(0xFF22C55E))),
               const SizedBox(width: 8),
-              Expanded(child: _Metric(icon: Icons.payments_outlined, label: 'Monthly', value: '\$${store.monthlySpend.toStringAsFixed(0)}', color: const Color(0xFF38BDF8))),
+              Expanded(child: _Metric(icon: Icons.payments_outlined, label: 'Monthly', value: 'PKR ${store.monthlySpend.toStringAsFixed(0)}', color: const Color(0xFF38BDF8))),
             ],
           ),
         ],
@@ -292,10 +329,12 @@ class _ServerCard extends StatelessWidget {
                       children: [
                         Text(server.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                         const SizedBox(height: 3),
-                        Text(server.ipAddress, style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                        Text(_firstIp(server.ipAddress), style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
+                  const Icon(Icons.chevron_right, color: AppColors.textMuted),
+                  const SizedBox(width: 6),
                   ServerStatusChip(status: server.status),
                 ],
               ),
@@ -329,6 +368,13 @@ Color _accentForStatus(ServerStatus status) {
     case ServerStatus.retired:
       return AppColors.neutral;
   }
+}
+
+String _firstIp(String ipAddress) {
+  return ipAddress.split(RegExp(r'[,;\s]+')).firstWhere(
+        (part) => part.trim().isNotEmpty,
+        orElse: () => ipAddress,
+      );
 }
 
 class _MiniInfo extends StatelessWidget {

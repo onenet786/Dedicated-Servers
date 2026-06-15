@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notification Test</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #f3f7fb; color: #111827; }
+    main { width: min(520px, calc(100% - 32px)); background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(17, 24, 39, .12); }
+    h1 { margin: 0 0 10px; font-size: 24px; }
+    p { color: #4b5563; line-height: 1.5; }
+    button { border: 0; border-radius: 10px; background: #2563eb; color: #fff; font-weight: 800; padding: 12px 16px; cursor: pointer; }
+    pre { white-space: pre-wrap; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; color: #374151; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>System Notification Test</h1>
+    <p>This page sends a browser/OS tray notification only. If permission is requested, allow it, then press the button again.</p>
+    <button type="button" onclick="sendTrayNotification()">Send Tray Notification</button>
+    <pre id="log">Ready</pre>
+  </main>
+  <script>
+    const log = (message) => {
+      document.getElementById('log').textContent = message;
+    };
+
+    async function sendTrayNotification() {
+      if (!('Notification' in window)) {
+        log('Notification API is not supported in this browser.');
+        return;
+      }
+
+      if (Notification.permission === 'default') {
+        const permission = await Notification.requestPermission();
+        log(`Permission result: ${permission}. Press the button again after allowing.`);
+        return;
+      }
+
+      if (Notification.permission !== 'granted') {
+        log('Notifications are blocked for this site.');
+        return;
+      }
+
+      try {
+        const registration = await navigator.serviceWorker.register('./sw.js?v=4', { scope: './' });
+        await navigator.serviceWorker.ready;
+        await registration.showNotification('Server Manager test', {
+          body: 'This is a system tray notification from servers.flaura.pk.',
+          icon: 'assets/icon-192.png',
+          badge: 'assets/favicon.png',
+          tag: `server-manager-test-${Date.now()}`,
+          requireInteraction: true
+        });
+        log('Sent to system notification API. If no popup appears, the browser or OS is suppressing notifications.');
+      } catch (error) {
+        log(`Failed: ${error.message || error}`);
+      }
+    }
+  </script>
+</body>
+</html>
